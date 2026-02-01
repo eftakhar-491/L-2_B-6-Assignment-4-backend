@@ -3,12 +3,13 @@ export const app = express();
 
 import cookieParser from "cookie-parser";
 import cors from "cors";
+// import { router } from "./app/routes";
 // import { envVars } from "./app/config/env";
 // import expressSession from "express-session";
 
 // import { router } from "./app/routes";
-// import { toNodeHandler } from "better-auth/node";
-// import { auth } from "./app/lib/auth";
+import { toNodeHandler } from "better-auth/node";
+import { auth } from "./app/lib/auth";
 // import { globalErrorHandler } from "./app/middlewares/globalErrorHandler";
 // import notFound from "./app/middlewares/notFound";
 
@@ -30,18 +31,18 @@ app.use(
     credentials: true,
   }),
 );
-app.use(
-  "/api/uploads",
-  express.static("uploads", {
-    maxAge: "7d",
-    index: false,
-    setHeaders: (res) => {
-      res.set("X-Content-Type-Options", "nosniff");
-    },
-  }),
-);
+// app.use(
+//   "/api/uploads",
+//   express.static("uploads", {
+//     maxAge: "7d",
+//     index: false,
+//     setHeaders: (res) => {
+//       res.set("X-Content-Type-Options", "nosniff");
+//     },
+//   }),
+// );
 
-// app.use("/api/auth", toNodeHandler(auth));
+app.use("/api/auth", toNodeHandler(auth));
 // app.use("/api", router);
 
 app.get("/", (_, res) => {

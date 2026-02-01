@@ -12,18 +12,400 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
-model User {
-  id    Int     @id @default(autoincrement())
-  email String  @unique
-  name  String?
-  posts Post[]
+
+enum UserRole {
+  customer
+  provider
+  admin
 }
 
-model Post {
-  id        Int     @id @default(autoincrement())
-  title     String
-  content   String?
-  published Boolean @default(false)
-  author    User    @relation(fields: [authorId], references: [id])
-  authorId  Int
+enum OrderStatus {
+  placed
+  preparing
+  ready
+  delivered
+  cancelled
+}
+
+enum PaymentMethod {
+  cash_on_delivery
+  bkash
+  stripe
+  sslcommerz
+}
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique
+  phone        String?
+  role         UserRole  @default(customer)
+  isActive     Boolean   @default(true)
+  deletedAt    DateTime?
+
+  providerProfile ProviderProfile?
+  addresses       Address[]
+  orders          Order[]
+  reviews         Review[]
+  cart            Cart?
+  moderationLogs  ModerationLog[]
+
+  name          String?
+  emailVerified Boolean   @default(false)
+  image         String?
+  status        String    @default("ACTIVE")
+  isSubscribed  Boolean?  @default(false)
+  sessions      Session[]
+  accounts      Account[]
+
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  @@index([role])
+  @@index([email])
+  @@map("user")
+}
+
+model ProviderProfile {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @unique @db.Uuid
+  name        String
+  description String?
+  address     String?
+  phone       String?
+  website     String?
+  logoSrc     String?
+  rating      Decimal  @default(0)
+  isVerified  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  meals      Meal[]
+  categories ProviderCategory[]
+  orders     Order[]
+
+  @@index([userId])
+  @@index([isVerified])
+}
+
+model Category {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  meals     MealCategory[]
+  providers ProviderCategory[]
+}
+
+model ProviderCategory {
+  id                String   @id @default(uuid()) @db.Uuid
+  providerProfileId String   @db.Uuid
+  categoryId        String   @db.Uuid
+  createdAt         DateTime @default(now())
+
+  providerProfile ProviderProfile @relation(fields: [providerProfileId], references: [id], onDelete: Cascade)
+  category        Category        @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([providerProfileId, categoryId])
+  @@index([providerProfileId])
+  @@index([categoryId])
+}
+
+model Meal {
+  id                String    @id @default(uuid()) @db.Uuid
+  providerProfileId String    @db.Uuid
+  title             String
+  slug              String
+  description       String?
+  shortDesc         String?
+  price             Decimal
+  currency          String    @default("USD")
+  isActive          Boolean   @default(true)
+  isFeatured        Boolean   @default(false)
+  stock             Int?
+  deletedAt         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  providerProfile ProviderProfile         @relation(fields: [providerProfileId], references: [id], onDelete: Cascade)
+  images          MealImage[]
+  variants        MealVariant[]
+  categories      MealCategory[]
+  dietaryTags     MealDietaryPreference[]
+  orderItems      OrderItem[]
+  reviews         Review[]
+  cartItems       CartItem[]
+
+  @@unique([providerProfileId, slug])
+  @@index([providerProfileId])
+  @@index([isActive])
+  @@index([isFeatured])
+}
+
+model MealImage {
+  id        String   @id @default(uuid()) @db.Uuid
+  mealId    String   @db.Uuid
+  src       String
+  publicId  String?
+  altText   String?
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  meal Meal @relation(fields: [mealId], references: [id], onDelete: Cascade)
+
+  @@index([mealId])
+}
+
+model MealVariant {
+  id         String   @id @default(uuid()) @db.Uuid
+  mealId     String   @db.Uuid
+  name       String
+  isRequired Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  meal    Meal                @relation(fields: [mealId], references: [id], onDelete: Cascade)
+  options MealVariantOption[]
+
+  @@index([mealId])
+}
+
+model MealVariantOption {
+  id         String   @id @default(uuid()) @db.Uuid
+  variantId  String   @db.Uuid
+  title      String
+  priceDelta Decimal  @default(0)
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  variant          MealVariant       @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  orderItemOptions OrderItemOption[]
+
+  @@index([variantId])
+}
+
+model MealCategory {
+  id         String   @id @default(uuid()) @db.Uuid
+  mealId     String   @db.Uuid
+  categoryId String   @db.Uuid
+  createdAt  DateTime @default(now())
+
+  meal     Meal     @relation(fields: [mealId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([mealId, categoryId])
+  @@index([mealId])
+  @@index([categoryId])
+}
+
+model DietaryPreference {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique
+  slug      String   @unique
+  createdAt DateTime @default(now())
+
+  meals MealDietaryPreference[]
+}
+
+model MealDietaryPreference {
+  id                  String @id @default(uuid()) @db.Uuid
+  mealId              String @db.Uuid
+  dietaryPreferenceId String @db.Uuid
+
+  meal              Meal              @relation(fields: [mealId], references: [id], onDelete: Cascade)
+  dietaryPreference DietaryPreference @relation(fields: [dietaryPreferenceId], references: [id], onDelete: Cascade)
+
+  @@unique([mealId, dietaryPreferenceId])
+  @@index([mealId])
+  @@index([dietaryPreferenceId])
+}
+
+model Address {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @db.Uuid
+  label       String?
+  fullAddress String
+  lat         Decimal?
+  lng         Decimal?
+  phone       String?
+  createdAt   DateTime @default(now())
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders Order[]
+
+  @@index([userId])
+}
+
+model Order {
+  id                String        @id @default(uuid()) @db.Uuid
+  userId            String        @db.Uuid
+  providerProfileId String        @db.Uuid
+  deliveryAddressId String        @db.Uuid
+  status            OrderStatus   @default(placed)
+  totalAmount       Decimal
+  currency          String        @default("USD")
+  paymentMethod     PaymentMethod @default(cash_on_delivery)
+  placedAt          DateTime      @default(now())
+  preparedAt        DateTime?
+  readyAt           DateTime?
+  deliveredAt       DateTime?
+  cancelledAt       DateTime?
+  notes             String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  user            User            @relation(fields: [userId], references: [id])
+  providerProfile ProviderProfile @relation(fields: [providerProfileId], references: [id])
+  address         Address         @relation(fields: [deliveryAddressId], references: [id])
+  items           OrderItem[]
+  reviews         Review[]
+
+  @@index([userId])
+  @@index([providerProfileId])
+  @@index([status])
+  @@index([placedAt])
+}
+
+model OrderItem {
+  id        String   @id @default(uuid()) @db.Uuid
+  orderId   String   @db.Uuid
+  mealId    String   @db.Uuid
+  quantity  Int      @default(1)
+  unitPrice Decimal
+  subtotal  Decimal
+  notes     String?
+  createdAt DateTime @default(now())
+
+  order   Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  meal    Meal              @relation(fields: [mealId], references: [id])
+  options OrderItemOption[]
+
+  @@index([orderId])
+  @@index([mealId])
+}
+
+model OrderItemOption {
+  id              String  @id @default(uuid()) @db.Uuid
+  orderItemId     String  @db.Uuid
+  variantOptionId String  @db.Uuid
+  priceDelta      Decimal @default(0)
+
+  orderItem     OrderItem         @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  variantOption MealVariantOption @relation(fields: [variantOptionId], references: [id])
+
+  @@index([orderItemId])
+  @@index([variantOptionId])
+}
+
+model Review {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  mealId    String   @db.Uuid
+  orderId   String?  @db.Uuid
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User   @relation(fields: [userId], references: [id])
+  meal  Meal   @relation(fields: [mealId], references: [id])
+  order Order? @relation(fields: [orderId], references: [id])
+
+  @@unique([userId, mealId])
+  @@index([userId])
+  @@index([mealId])
+  @@index([orderId])
+  @@index([rating])
+}
+
+model Cart {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @unique @db.Uuid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items CartItem[]
+}
+
+model CartItem {
+  id              String   @id @default(uuid()) @db.Uuid
+  cartId          String   @db.Uuid
+  mealId          String   @db.Uuid
+  variantOptionId String?  @db.Uuid
+  quantity        Int      @default(1)
+  createdAt       DateTime @default(now())
+
+  cart Cart @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  meal Meal @relation(fields: [mealId], references: [id])
+
+  @@unique([cartId, mealId, variantOptionId])
+  @@index([cartId])
+  @@index([mealId])
+}
+
+model ModerationLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  adminUserId String   @db.Uuid
+  targetType  String
+  targetId    String
+  action      String
+  reason      String?
+  createdAt   DateTime @default(now())
+
+  admin User @relation(fields: [adminUserId], references: [id])
+
+  @@index([adminUserId])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+}
+
+model Session {
+  id        String   @id  @default(uuid()) @db.Uuid
+  expiresAt DateTime
+  token     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id @default(uuid()) @db.Uuid
+  accountId             String
+  providerId            String
+  userId                String   @db.Uuid
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id @default(uuid()) @db.Uuid
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
 }
