@@ -33,13 +33,13 @@ export const checkAuth =
         });
       }
 
-      if (session.user.status === UserStatus.BLOCKED) {
+      if (session.user.status === UserStatus.blocked) {
         return res.status(httpStatus.FORBIDDEN).json({
           success: false,
           message: "Your account has been blocked. Please contact support.",
         });
       }
-      if (session.user.status === UserStatus.DELETED) {
+      if (session.user.status === UserStatus.deleted) {
         return res.status(httpStatus.FORBIDDEN).json({
           success: false,
           message: "Your account has been deleted. Please contact support.",

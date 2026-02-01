@@ -3,22 +3,21 @@ import { checkAuth } from "../../middlewares/checkAuth";
 import { UserControllers } from "./user.controller";
 import { Role } from "./user.interface";
 
-
 // /api/user/
 
 const router = Router();
 // admin route
-router.get("/", checkAuth(Role.ADMIN), UserControllers.getAllUsers);
+router.get("/", checkAuth(Role.admin), UserControllers.getAllUsers);
 
 router.get(
-  "/:id/profile",
-  checkAuth(Role.ADMIN),
+  "/profile/:id",
+  checkAuth(Role.admin),
   UserControllers.getSingleUser,
 );
 
 router.put(
-  "/:id/update-profile",
-  checkAuth(Role.ADMIN),
+  "/update-profile/:id",
+  checkAuth(Role.admin),
   UserControllers.updateUser,
 );
 

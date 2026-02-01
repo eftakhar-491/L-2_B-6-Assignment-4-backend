@@ -3,7 +3,7 @@ export const app = express();
 
 import cookieParser from "cookie-parser";
 import cors from "cors";
-// import { router } from "./app/routes";
+import { router } from "./app/routes";
 // import { envVars } from "./app/config/env";
 // import expressSession from "express-session";
 
@@ -42,8 +42,18 @@ app.use(
 //   }),
 // );
 
-app.use("/api/auth", toNodeHandler(auth));
-// app.use("/api", router);
+app.use(
+  "/api/auth",
+  (req, res, next) => {
+    const { role } = req.body;
+    if (role && role === "admin") {
+      req.body.status = "pending";
+    }
+    next();
+  },
+  toNodeHandler(auth),
+);
+app.use("/api", router);
 
 app.get("/", (_, res) => {
   res.send({

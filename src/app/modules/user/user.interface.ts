@@ -1,12 +1,14 @@
 export enum Role {
-  ADMIN = "ADMIN",
-  USER = "USER",
+  customer = "customer",
+  provider = "provider",
+  admin = "admin",
 }
 
 export enum UserStatus {
-  ACTIVE = "ACTIVE",
-  BLOCKED = "BLOCKED",
-  DELETED = "DELETED",
+  active = "active",
+  blocked = "blocked",
+  pending = "pending",
+  deleted = "deleted",
 }
 
 export interface IUser {

@@ -9,6 +9,11 @@ export const auth = betterAuth({
   database: prismaAdapter(prisma, {
     provider: "postgresql",
   }),
+  advanced: {
+    database: {
+      generateId: "uuid",
+    },
+  },
   secret: process.env.BETTER_AUTH_SECRET as string,
   trustedOrigins: [process.env.FRONTEND_URL as string],
   user: {
@@ -16,7 +21,7 @@ export const auth = betterAuth({
       role: {
         type: [...Object.values(Role)],
         required: true,
-        defaultValue: "USER",
+        defaultValue: "customer",
       },
       phone: {
         type: "string",
@@ -26,7 +31,7 @@ export const auth = betterAuth({
       status: {
         type: [...Object.values(UserStatus)],
         required: false,
-        defaultValue: "ACTIVE",
+        defaultValue: "active",
       },
       isSubscribed: {
         type: "boolean",
