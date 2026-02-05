@@ -6,8 +6,10 @@ import { sendResponse } from "../../utils/sendResponse";
 import { ProviderServices } from "./provider.service";
 import type {
   ICreateMealPayload,
+  ICreateProviderProfilePayload,
   IUpdateMealPayload,
   IUpdateOrderStatusPayload,
+  IUpdateProviderProfilePayload,
 } from "./provider.interface";
 
 const addMeal = catchAsync(
@@ -123,6 +125,46 @@ export const ProviderControllers = {
         statusCode: httpStatus.OK,
         message: "Provider retrieved successfully",
         data: provider,
+      });
+    },
+  ),
+  createProviderProfile: catchAsync(
+    async (req: Request, res: Response, next: NextFunction) => {
+      const userId = req.user?.id as string;
+      if (!userId) {
+        throw new AppError(httpStatus.UNAUTHORIZED, "User not authenticated");
+      }
+
+      const profile = await ProviderServices.createProviderProfile(
+        userId,
+        req.body as ICreateProviderProfilePayload,
+      );
+
+      sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.CREATED,
+        message: "Provider profile created successfully",
+        data: profile,
+      });
+    },
+  ),
+  updateProviderProfile: catchAsync(
+    async (req: Request, res: Response, next: NextFunction) => {
+      const userId = req.user?.id as string;
+      if (!userId) {
+        throw new AppError(httpStatus.UNAUTHORIZED, "User not authenticated");
+      }
+
+      const profile = await ProviderServices.updateProviderProfile(
+        userId,
+        req.body as IUpdateProviderProfilePayload,
+      );
+
+      sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "Provider profile updated successfully",
+        data: profile,
       });
     },
   ),

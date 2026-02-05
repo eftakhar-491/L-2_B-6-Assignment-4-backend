@@ -5,11 +5,13 @@ import type { Prisma } from "../../../../generated/prisma/browser";
 import type {
   ICategoryInput,
   ICreateMealPayload,
+  ICreateProviderProfilePayload,
   IDietaryPreferenceInput,
   IMealImageInput,
   IMealVariantInput,
   IUpdateMealPayload,
   IUpdateOrderStatusPayload,
+  IUpdateProviderProfilePayload,
   OrderStatus,
   ProviderOrderStatus,
 } from "./provider.interface";
@@ -27,10 +29,105 @@ const getProviderProfileOrThrow = async (userId: string) => {
   });
 
   if (!providerProfile) {
-    throw new AppError(httpStatus.NOT_FOUND, "Provider profile not found");
+    throw new AppError(
+      httpStatus.NOT_FOUND,
+      "Provider profile not found. Please create a profile first.",
+    );
   }
 
   return providerProfile;
+};
+
+const ensureProviderRole = async (userId: string) => {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, role: true },
+  });
+
+  if (!user) {
+    throw new AppError(httpStatus.NOT_FOUND, "User not found");
+  }
+
+  if (user.role !== "provider") {
+    throw new AppError(
+      httpStatus.FORBIDDEN,
+      "Only providers can access this resource",
+    );
+  }
+
+  return user;
+};
+
+const createProviderProfile = async (
+  userId: string,
+  payload: ICreateProviderProfilePayload,
+) => {
+  await ensureProviderRole(userId);
+
+  if (!payload?.name?.trim()) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Provider name is required");
+  }
+
+  const existing = await prisma.providerProfile.findUnique({
+    where: { userId },
+    select: { id: true },
+  });
+
+  if (existing) {
+    throw new AppError(
+      httpStatus.CONFLICT,
+      "Provider profile already exists",
+    );
+  }
+
+  const profile = await prisma.providerProfile.create({
+    data: {
+      user: { connect: { id: userId } },
+      name: payload.name.trim(),
+      description: payload.description,
+      address: payload.address,
+      phone: payload.phone,
+      website: payload.website,
+      logoSrc: payload.logoSrc,
+    },
+  });
+
+  return profile;
+};
+
+const updateProviderProfile = async (
+  userId: string,
+  payload: IUpdateProviderProfilePayload,
+) => {
+  await ensureProviderRole(userId);
+
+  const existing = await prisma.providerProfile.findUnique({
+    where: { userId },
+    select: { id: true },
+  });
+
+  if (!existing) {
+    throw new AppError(
+      httpStatus.NOT_FOUND,
+      "Provider profile not found. Please create a profile first.",
+    );
+  }
+
+  const profile = await prisma.providerProfile.update({
+    where: { userId },
+    data: {
+      ...(payload.name !== undefined && { name: payload.name }),
+      ...(payload.description !== undefined && {
+        description: payload.description,
+      }),
+      ...(payload.address !== undefined && { address: payload.address }),
+      ...(payload.phone !== undefined && { phone: payload.phone }),
+      ...(payload.website !== undefined && { website: payload.website }),
+      ...(payload.logoSrc !== undefined && { logoSrc: payload.logoSrc }),
+    },
+  });
+
+  return profile;
 };
 
 const ensureValidPrice = (price: unknown) => {
@@ -819,6 +916,8 @@ export const ProviderServices = {
 
     return provider;
   },
+  createProviderProfile,
+  updateProviderProfile,
   addMeal,
   updateMeal,
   removeMeal,

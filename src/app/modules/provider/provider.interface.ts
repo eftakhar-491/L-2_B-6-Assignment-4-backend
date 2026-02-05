@@ -32,6 +32,24 @@ export interface IDietaryPreferenceInput {
   slug?: string;
 }
 
+export interface ICreateProviderProfilePayload {
+  name: string;
+  description?: string;
+  address?: string;
+  phone?: string;
+  website?: string;
+  logoSrc?: string;
+}
+
+export interface IUpdateProviderProfilePayload {
+  name?: string;
+  description?: string | null;
+  address?: string | null;
+  phone?: string | null;
+  website?: string | null;
+  logoSrc?: string | null;
+}
+
 export interface ICreateMealPayload {
   title: string;
   slug?: string;

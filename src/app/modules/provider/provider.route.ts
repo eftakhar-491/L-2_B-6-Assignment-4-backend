@@ -5,6 +5,16 @@ import { ProviderControllers } from "./provider.controller";
 
 const router = Router();
 
+router.post(
+  "/profile",
+  checkAuth(Role.provider),
+  ProviderControllers.createProviderProfile,
+);
+router.patch(
+  "/profile",
+  checkAuth(Role.provider),
+  ProviderControllers.updateProviderProfile,
+);
 router.post("/meals", checkAuth(Role.provider), ProviderControllers.addMeal);
 router.put("/meals/:id", checkAuth(Role.provider), ProviderControllers.updateMeal);
 router.delete(
