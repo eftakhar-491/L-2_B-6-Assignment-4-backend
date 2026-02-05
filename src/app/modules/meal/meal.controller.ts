@@ -22,7 +22,7 @@ const getAllMeals = catchAsync(
 
 const getMealById = catchAsync(
   async (req: Request, res: Response, next: NextFunction) => {
-    const meal = await MealServices.getMealById(req.params.id);
+    const meal = await MealServices.getMealById(req.params.id as string);
 
     sendResponse(res, {
       success: true,

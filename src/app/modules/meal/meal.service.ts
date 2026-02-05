@@ -2,12 +2,13 @@ import httpStatus from "http-status-codes";
 import type { Prisma } from "../../../../generated/prisma/browser";
 import AppError from "../../helper/AppError";
 import { prisma } from "../../lib/prisma";
+import { QueryBuilder } from "../../utils/QueryBuilder";
 import type { IMealFilters } from "./meal.interface";
 
 const parseBoolean = (value?: string) => {
   if (value === undefined) return undefined;
-  if (value === "true") return true;
-  if (value === "false") return false;
+  if (value === "true" || value === "1") return true;
+  if (value === "false" || value === "0") return false;
   return undefined;
 };
 
@@ -15,18 +16,6 @@ const parseNumber = (value?: string) => {
   if (value === undefined) return undefined;
   const num = Number(value);
   return Number.isFinite(num) ? num : undefined;
-};
-
-const parseSort = (
-  sort: string | undefined,
-): Prisma.MealOrderByWithRelationInput[] => {
-  const sortBy = sort || "createdAt";
-  return sortBy.split(",").map((field) => {
-    if (field.startsWith("-")) {
-      return { [field.substring(1)]: "desc" };
-    }
-    return { [field]: "asc" };
-  });
 };
 
 const parsePagination = (page?: string, limit?: string) => {
@@ -40,48 +29,54 @@ const parsePagination = (page?: string, limit?: string) => {
   };
 };
 
-const getAllMeals = async (query: IMealFilters) => {
-  const {
-    searchTerm,
-    providerId,
-    providerProfileId,
-    categoryId,
-    minPrice,
-    maxPrice,
-    isFeatured,
-    isActive,
-    sort,
-    page,
-    limit,
-  } = query;
+const buildMealQuery = (query: IMealFilters) => {
+  const qbQuery: Record<string, string | undefined> = {
+    searchTerm: query.searchTerm,
+    sort: query.sort,
+    page: query.page,
+    limit: query.limit,
+  };
+
+  const providerFilter = query.providerProfileId || query.providerId;
+  if (providerFilter) {
+    qbQuery.providerProfileId = providerFilter;
+  }
+
+  const qb = new QueryBuilder<
+    Prisma.MealWhereInput,
+    Prisma.MealSelect,
+    Prisma.MealOrderByWithRelationInput[]
+  >(qbQuery)
+    .filter()
+    .search(["title", "description", "shortDesc"])
+    .sort()
+    .paginate();
+
+  const built = qb.build() as Prisma.MealFindManyArgs;
 
   const where: Prisma.MealWhereInput = {
+    ...(built.where ?? {}),
     deletedAt: null,
   };
 
-  const activeFilter = parseBoolean(isActive);
-  where.isActive = activeFilter ?? true;
+  const active = parseBoolean(query.isActive);
+  where.isActive = active ?? true;
 
-  const featuredFilter = parseBoolean(isFeatured);
-  if (featuredFilter !== undefined) {
-    where.isFeatured = featuredFilter;
+  const featured = parseBoolean(query.isFeatured);
+  if (featured !== undefined) {
+    where.isFeatured = featured;
   }
 
-  const providerFilter = providerId || providerProfileId;
-  if (providerFilter) {
-    where.providerProfileId = providerFilter;
-  }
-
-  if (categoryId) {
+  if (query.categoryId) {
     where.categories = {
       some: {
-        categoryId,
+        categoryId: query.categoryId,
       },
     };
   }
 
-  const min = parseNumber(minPrice);
-  const max = parseNumber(maxPrice);
+  const min = parseNumber(query.minPrice);
+  const max = parseNumber(query.maxPrice);
   if (min !== undefined || max !== undefined) {
     where.price = {
       ...(min !== undefined && { gte: min }),
@@ -89,22 +84,19 @@ const getAllMeals = async (query: IMealFilters) => {
     };
   }
 
-  if (searchTerm) {
-    where.OR = [
-      { title: { contains: searchTerm, mode: "insensitive" } },
-      { description: { contains: searchTerm, mode: "insensitive" } },
-      { shortDesc: { contains: searchTerm, mode: "insensitive" } },
-    ];
-  }
+  return {
+    where,
+    orderBy: built.orderBy,
+    skip: built.skip,
+    take: built.take,
+  };
+};
 
-  const { page: pageNumber, limit: limitNumber, skip, take } = parsePagination(
-    page,
-    limit,
-  );
+const getAllMeals = async (query: IMealFilters) => {
+  const { where, orderBy, skip, take } = buildMealQuery(query);
+  const { page, limit } = parsePagination(query.page, query.limit);
 
-  const orderBy = parseSort(sort);
-
-  const [total, meals] = await prisma.$transaction([
+  const [total, meals] = await Promise.all([
     prisma.meal.count({ where }),
     prisma.meal.findMany({
       where,
@@ -141,10 +133,10 @@ const getAllMeals = async (query: IMealFilters) => {
 
   return {
     meta: {
-      page: pageNumber,
-      limit: limitNumber,
+      page,
+      limit,
       total,
-      totalPage: Math.ceil(total / limitNumber),
+      totalPage: Math.ceil(total / limit),
     },
     data: meals,
   };
