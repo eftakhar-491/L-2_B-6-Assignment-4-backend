@@ -3,12 +3,10 @@ import httpStatus from "http-status-codes";
 
 import AppError from "../helper/AppError";
 
-
 export const checkRole =
   (...authRoles: string[]) =>
   async (req: Request, res: Response, next: NextFunction) => {
     const role = req.user?.role;
-    const userId = req.user?.id;
 
     if (!role) {
       throw new AppError(
@@ -23,7 +21,6 @@ export const checkRole =
           "You do not have permission to access this resource",
         );
       }
-
       next();
     } catch (error) {
       console.log("Role check error", error);

@@ -30,7 +30,7 @@ export const getAllUsers = async (query: Record<string, string>) => {
     data: users,
   };
 };
-const getMe = async (userId: string, headers: Record<string, string>) => {
+const getMe = async (headers: Record<string, string>) => {
   const session = await auth.api.getSession({
     headers: headers,
   });
@@ -49,6 +49,14 @@ const updateMe = async (
     phone?: string;
     image?: string | null;
     status?: UserStatus | null;
+    isActive?: boolean;
+    addresses?: Array<
+      Pick<
+        Prisma.AddressUpdateManyMutationInput,
+        "label" | "fullAddress" | "lat" | "lng" | "phone"
+      >
+    >;
+    providerProfile?: Prisma.ProviderProfileUpdateOneWithoutUserNestedInput;
   },
 ) => {
   const existingUser = await prisma.user.findUnique({
@@ -67,6 +75,8 @@ const updateMe = async (
       phone: payload.phone ?? existingUser.phone,
       image: payload.image ?? existingUser.image,
       status: payload.status ?? existingUser.status,
+      isActive: payload.isActive ?? existingUser.isActive,
+      ...(payload.providerProfile && { providerProfile: payload.providerProfile }),
     },
 
     select: {
@@ -83,6 +93,23 @@ const updateMe = async (
       updatedAt: true,
     },
   });
+
+  const addressData = payload.addresses;
+  if (addressData?.length) {
+    await prisma.address.deleteMany({
+      where: { userId: userId },
+    });
+    await prisma.address.createMany({
+      data: addressData.map((address) => ({
+        userId,
+        label: address.label ?? null,
+        fullAddress: address.fullAddress,
+        lat: address.lat ?? null,
+        lng: address.lng ?? null,
+        phone: address.phone ?? null,
+      })),
+    });
+  }
 
   return updatedUser;
 };

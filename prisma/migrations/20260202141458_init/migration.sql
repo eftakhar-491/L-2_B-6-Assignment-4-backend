@@ -2,6 +2,9 @@
 CREATE TYPE "UserRole" AS ENUM ('customer', 'provider', 'admin');
 
 -- CreateEnum
+CREATE TYPE "UserStatus" AS ENUM ('active', 'blocked', 'pending', 'deleted');
+
+-- CreateEnum
 CREATE TYPE "OrderStatus" AS ENUM ('placed', 'preparing', 'ready', 'delivered', 'cancelled');
 
 -- CreateEnum
@@ -18,7 +21,7 @@ CREATE TABLE "user" (
     "name" TEXT,
     "emailVerified" BOOLEAN NOT NULL DEFAULT false,
     "image" TEXT,
-    "status" TEXT NOT NULL DEFAULT 'ACTIVE',
+    "status" "UserStatus" NOT NULL DEFAULT 'active',
     "isSubscribed" BOOLEAN DEFAULT false,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -308,6 +311,9 @@ CREATE TABLE "verification" (
 
 -- CreateIndex
 CREATE UNIQUE INDEX "user_email_key" ON "user"("email");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "user_phone_key" ON "user"("phone");
 
 -- CreateIndex
 CREATE INDEX "user_role_idx" ON "user"("role");

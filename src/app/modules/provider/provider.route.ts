@@ -1,0 +1,21 @@
+import { Router } from "express";
+import { checkAuth } from "../../middlewares/checkAuth";
+import { Role } from "../user/user.interface";
+import { ProviderControllers } from "./provider.controller";
+
+const router = Router();
+
+router.post("/meals", checkAuth(Role.provider), ProviderControllers.addMeal);
+router.put("/meals/:id", checkAuth(Role.provider), ProviderControllers.updateMeal);
+router.delete(
+  "/meals/:id",
+  checkAuth(Role.provider),
+  ProviderControllers.removeMeal,
+);
+router.patch(
+  "/orders/:id",
+  checkAuth(Role.provider),
+  ProviderControllers.updateOrderStatus,
+);
+
+export const ProviderRoutes = router;

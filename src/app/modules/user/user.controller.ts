@@ -100,7 +100,6 @@ const getMe = catchAsync(
     }
     try {
       const user = await UserServices.getMe(
-        (decodedHeader as IUser).id,
         req.headers as Record<string, string>,
       );
 
@@ -120,9 +119,17 @@ const getMe = catchAsync(
 );
 const updateMe = catchAsync(
   async (req: Request, res: Response, next: NextFunction) => {
-    const { name, phone, image, status: bodyStatus } = req.body;
+    const {
+      name,
+      phone,
+      image,
+      status: bodyStatus,
+      isActive,
+      addresses,
+      providerProfile,
+    } = req.body;
 
-    const status = bodyStatus == "DELETED" ? bodyStatus : null;
+    const status = bodyStatus == "deleted" ? bodyStatus : null;
 
     const decodedHeader = req.user;
 
@@ -132,7 +139,7 @@ const updateMe = catchAsync(
     try {
       const updatedUser = await UserServices.updateMe(
         (decodedHeader as IUser).id,
-        { name, phone, image, status },
+        { name, phone, image, status, isActive, addresses, providerProfile },
       );
 
       sendResponse(res, {
@@ -218,5 +225,4 @@ export const UserControllers = {
   getSingleUser,
   getMe,
   updateUser,
-
 };

@@ -1,0 +1,49 @@
+import type { NextFunction, Request, Response } from "express";
+import httpStatus from "http-status-codes";
+import AppError from "../../helper/AppError";
+import { catchAsync } from "../../utils/catchAsync";
+import { sendResponse } from "../../utils/sendResponse";
+import { AdminServices } from "./admin.service";
+import type { IUpdateUserStatusPayload } from "./admin.interface";
+
+const getAllUsers = catchAsync(
+  async (req: Request, res: Response, next: NextFunction) => {
+    const users = await AdminServices.getAllUsers(
+      req.query as Record<string, string>,
+    );
+
+    sendResponse(res, {
+      success: true,
+      statusCode: httpStatus.OK,
+      message: "Users retrieved successfully",
+      data: users.data,
+      meta: users.meta,
+    });
+  },
+);
+
+const updateUserStatus = catchAsync(
+  async (req: Request, res: Response, next: NextFunction) => {
+    const userId = req.params.id;
+    if (!userId) {
+      throw new AppError(httpStatus.BAD_REQUEST, "User ID is required");
+    }
+
+    const user = await AdminServices.updateUserStatus(
+      userId,
+      req.body as IUpdateUserStatusPayload,
+    );
+
+    sendResponse(res, {
+      success: true,
+      statusCode: httpStatus.OK,
+      message: "User status updated successfully",
+      data: user,
+    });
+  },
+);
+
+export const AdminControllers = {
+  getAllUsers,
+  updateUserStatus,
+};

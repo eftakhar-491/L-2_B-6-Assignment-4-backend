@@ -47,7 +47,6 @@ model User {
   phone        String?   @unique
   role         UserRole  @default(customer)
   isActive     Boolean   @default(true)
-  deletedAt    DateTime?
 
   providerProfile ProviderProfile?
   addresses       Address[]
@@ -189,6 +188,7 @@ model MealVariantOption {
 
   variant          MealVariant       @relation(fields: [variantId], references: [id], onDelete: Cascade)
   orderItemOptions OrderItemOption[]
+  cartItems        CartItem[]
 
   @@index([variantId])
 }
@@ -233,7 +233,7 @@ model Address {
   id          String   @id @default(uuid()) @db.Uuid
   userId      String   @db.Uuid
   label       String?
-  fullAddress String
+  fullAddress String   @db.Text
   lat         Decimal?
   lng         Decimal?
   phone       String?
@@ -345,8 +345,9 @@ model CartItem {
   quantity        Int      @default(1)
   createdAt       DateTime @default(now())
 
-  cart Cart @relation(fields: [cartId], references: [id], onDelete: Cascade)
-  meal Meal @relation(fields: [mealId], references: [id])
+  cart          Cart               @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  meal          Meal               @relation(fields: [mealId], references: [id])
+  variantOption MealVariantOption? @relation(fields: [variantOptionId], references: [id])
 
   @@unique([cartId, mealId, variantOptionId])
   @@index([cartId])

@@ -2,6 +2,7 @@ import { Router } from "express";
 import { checkAuth } from "../../middlewares/checkAuth";
 import { UserControllers } from "./user.controller";
 import { Role } from "./user.interface";
+import { checkRole } from "../../middlewares/checkRole";
 
 // /api/user/
 
@@ -25,12 +26,14 @@ router.put(
 router.get(
   "/profile",
   checkAuth(...Object.values(Role)),
+  checkRole(...Object.values(Role)),
   UserControllers.getMe,
 );
 
 router.patch(
   "/profile",
   checkAuth(...Object.values(Role)),
+  checkRole(...Object.values(Role)),
   UserControllers.updateMe,
 );
 
