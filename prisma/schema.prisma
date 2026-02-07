@@ -41,6 +41,12 @@ enum PaymentMethod {
   sslcommerz
 }
 
+enum CategoryStatus {
+  active
+  pending
+  rejected
+}
+
 model User {
   id           String    @id @default(uuid()) @db.Uuid
   email        String    @unique
@@ -54,6 +60,7 @@ model User {
   reviews         Review[]
   cart            Cart?
   moderationLogs  ModerationLog[]
+  categoriesCreated Category[] @relation("CategoryCreator")
 
   name          String?
   emailVerified Boolean   @default(false)
@@ -98,11 +105,17 @@ model Category {
   name        String   @unique
   slug        String   @unique
   description String?
+  status      CategoryStatus @default(active)
+  createdByUserId String? @db.Uuid
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  createdBy User? @relation("CategoryCreator", fields: [createdByUserId], references: [id])
   meals     MealCategory[]
   providers ProviderCategory[]
+
+  @@index([status])
+  @@index([createdByUserId])
 }
 
 model ProviderCategory {

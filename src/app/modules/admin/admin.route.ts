@@ -11,6 +11,27 @@ router.patch(
   checkAuth(Role.admin),
   AdminControllers.updateUserStatus,
 );
+router.get("/orders", checkAuth(Role.admin), AdminControllers.getAllOrders);
+router.get(
+  "/categories",
+  checkAuth(Role.admin),
+  AdminControllers.getAllCategories,
+);
+router.post(
+  "/categories",
+  checkAuth(Role.admin),
+  AdminControllers.createCategory,
+);
+router.patch(
+  "/categories/:id",
+  checkAuth(Role.admin),
+  AdminControllers.updateCategory,
+);
+router.delete(
+  "/categories/:id",
+  checkAuth(Role.admin),
+  AdminControllers.deleteCategory,
+);
 router.patch(
   "/providers/:id/verify",
   checkAuth(Role.admin),

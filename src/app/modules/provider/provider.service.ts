@@ -12,6 +12,7 @@ import type {
   IUpdateMealPayload,
   IUpdateOrderStatusPayload,
   IUpdateProviderProfilePayload,
+  ICreateProviderCategoryPayload,
   OrderStatus,
   ProviderOrderStatus,
 } from "./provider.interface";
@@ -264,10 +265,7 @@ const normalizeCategories = (
   categoryIds?: string[],
 ) => {
   const idSet = new Set<string>();
-  const slugMap = new Map<
-    string,
-    { name: string; slug: string; description?: string }
-  >();
+  const slugSet = new Set<string>();
 
   (categoryIds ?? []).forEach((id) => {
     if (id) idSet.add(id);
@@ -292,38 +290,61 @@ const normalizeCategories = (
       throw new AppError(httpStatus.BAD_REQUEST, "Category slug is invalid");
     }
 
-    const name = category?.name?.trim() || category?.slug?.trim() || slug;
-    slugMap.set(slug, {
-      name,
-      slug,
-      description: category?.description,
-    });
-  });
-
-  const mealCategoryCreates: Prisma.MealCategoryCreateWithoutMealInput[] = [];
-
-  idSet.forEach((id) => {
-    mealCategoryCreates.push({
-      category: { connect: { id } },
-    });
-  });
-
-  slugMap.forEach((category) => {
-    mealCategoryCreates.push({
-      category: {
-        connectOrCreate: {
-          where: { slug: category.slug },
-          create: category,
-        },
-      },
-    });
+    slugSet.add(slug);
   });
 
   return {
-    mealCategoryCreates,
     categoryIdsToLink: Array.from(idSet),
-    categorySlugsToLink: Array.from(slugMap.keys()),
+    categorySlugsToLink: Array.from(slugSet),
   };
+};
+
+const resolveActiveCategoryIds = async (
+  categoryIds: string[],
+  categorySlugs: string[],
+) => {
+  if (!categoryIds.length && !categorySlugs.length) {
+    return [];
+  }
+
+  const or: Prisma.CategoryWhereInput[] = [];
+  if (categoryIds.length) {
+    or.push({ id: { in: categoryIds } });
+  }
+  if (categorySlugs.length) {
+    or.push({ slug: { in: categorySlugs } });
+  }
+
+  const categories = await prisma.category.findMany({
+    where: {
+      status: "active",
+      OR: or,
+    },
+    select: { id: true, slug: true },
+  });
+
+  const foundIds = new Set(categories.map((category) => category.id));
+  const foundSlugs = new Set(categories.map((category) => category.slug));
+
+  categoryIds.forEach((id) => {
+    if (!foundIds.has(id)) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        "Category not found or not approved",
+      );
+    }
+  });
+
+  categorySlugs.forEach((slug) => {
+    if (!foundSlugs.has(slug)) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        "Category not found or not approved",
+      );
+    }
+  });
+
+  return categories.map((category) => category.id);
 };
 
 const normalizeDietaryPreferences = (
@@ -455,8 +476,10 @@ const addMeal = async (userId: string, payload: ICreateMealPayload) => {
 
   const normalizedImages = normalizeImages(payload.images);
   const normalizedVariants = normalizeVariants(payload.variants);
-  const { mealCategoryCreates, categoryIdsToLink, categorySlugsToLink } =
-    normalizeCategories(payload.categories, payload.categoryIds);
+  const { categoryIdsToLink, categorySlugsToLink } = normalizeCategories(
+    payload.categories,
+    payload.categoryIds,
+  );
 
   const {
     dietaryTagCreates,
@@ -467,7 +490,10 @@ const addMeal = async (userId: string, payload: ICreateMealPayload) => {
     payload.dietaryPreferenceIds,
   );
 
-  await ensureCategoryIdsExist(categoryIdsToLink);
+  const resolvedCategoryIds = await resolveActiveCategoryIds(
+    categoryIdsToLink,
+    categorySlugsToLink,
+  );
   await ensureDietaryPreferenceIdsExist(dietaryPreferenceIdsToLink);
 
   const data: Prisma.MealCreateInput = {
@@ -485,8 +511,12 @@ const addMeal = async (userId: string, payload: ICreateMealPayload) => {
     },
     ...(normalizedImages && { images: { create: normalizedImages } }),
     ...(normalizedVariants && { variants: { create: normalizedVariants } }),
-    ...(mealCategoryCreates.length > 0 && {
-      categories: { create: mealCategoryCreates },
+    ...(resolvedCategoryIds.length > 0 && {
+      categories: {
+        create: resolvedCategoryIds.map((categoryId) => ({
+          category: { connect: { id: categoryId } },
+        })),
+      },
     }),
     ...(dietaryTagCreates.length > 0 && {
       dietaryTags: { create: dietaryTagCreates },
@@ -495,27 +525,14 @@ const addMeal = async (userId: string, payload: ICreateMealPayload) => {
 
   const meal = await prisma.meal.create({ data });
 
-  if (categoryIdsToLink.length > 0 || categorySlugsToLink.length > 0) {
-    const slugCategories =
-      categorySlugsToLink.length > 0
-        ? await prisma.category.findMany({
-            where: { slug: { in: categorySlugsToLink } },
-            select: { id: true },
-          })
-        : [];
-
-    const allCategoryIds = new Set<string>(categoryIdsToLink);
-    slugCategories.forEach((category) => allCategoryIds.add(category.id));
-
-    if (allCategoryIds.size > 0) {
-      await prisma.providerCategory.createMany({
-        data: Array.from(allCategoryIds).map((categoryId) => ({
-          providerProfileId: providerProfile.id,
-          categoryId,
-        })),
-        skipDuplicates: true,
-      });
-    }
+  if (resolvedCategoryIds.length > 0) {
+    await prisma.providerCategory.createMany({
+      data: resolvedCategoryIds.map((categoryId) => ({
+        providerProfileId: providerProfile.id,
+        categoryId,
+      })),
+      skipDuplicates: true,
+    });
   }
 
   return meal;
@@ -594,14 +611,12 @@ const updateMeal = async (
       : []
     : undefined;
 
-  const { mealCategoryCreates, categoryIdsToLink, categorySlugsToLink } =
-    hasCategoryUpdate
-      ? normalizeCategories(payload.categories, payload.categoryIds)
-      : {
-          mealCategoryCreates: [],
-          categoryIdsToLink: [],
-          categorySlugsToLink: [],
-        };
+  const { categoryIdsToLink, categorySlugsToLink } = hasCategoryUpdate
+    ? normalizeCategories(payload.categories, payload.categoryIds)
+    : {
+        categoryIdsToLink: [],
+        categorySlugsToLink: [],
+      };
 
   const hasDietaryUpdate =
     payload.dietaryPreferenceIds !== undefined ||
@@ -622,9 +637,9 @@ const updateMeal = async (
         dietaryPreferenceSlugsToLink: [],
       };
 
-  if (hasCategoryUpdate) {
-    await ensureCategoryIdsExist(categoryIdsToLink);
-  }
+  const resolvedCategoryIds = hasCategoryUpdate
+    ? await resolveActiveCategoryIds(categoryIdsToLink, categorySlugsToLink)
+    : [];
   if (hasDietaryUpdate) {
     await ensureDietaryPreferenceIdsExist(dietaryPreferenceIdsToLink);
   }
@@ -663,8 +678,12 @@ const updateMeal = async (
   if (hasCategoryUpdate) {
     data.categories = {
       deleteMany: {},
-      ...(mealCategoryCreates.length > 0
-        ? { create: mealCategoryCreates }
+      ...(resolvedCategoryIds.length > 0
+        ? {
+            create: resolvedCategoryIds.map((categoryId) => ({
+              category: { connect: { id: categoryId } },
+            })),
+          }
         : {}),
     };
   }
@@ -685,30 +704,14 @@ const updateMeal = async (
     data,
   });
 
-  if (
-    hasCategoryUpdate &&
-    (categoryIdsToLink.length > 0 || categorySlugsToLink.length > 0)
-  ) {
-    const slugCategories =
-      categorySlugsToLink.length > 0
-        ? await prisma.category.findMany({
-            where: { slug: { in: categorySlugsToLink } },
-            select: { id: true },
-          })
-        : [];
-
-    const allCategoryIds = new Set<string>(categoryIdsToLink);
-    slugCategories.forEach((category) => allCategoryIds.add(category.id));
-
-    if (allCategoryIds.size > 0) {
-      await prisma.providerCategory.createMany({
-        data: Array.from(allCategoryIds).map((categoryId) => ({
-          providerProfileId: providerProfile.id,
-          categoryId,
-        })),
-        skipDuplicates: true,
-      });
-    }
+  if (hasCategoryUpdate && resolvedCategoryIds.length > 0) {
+    await prisma.providerCategory.createMany({
+      data: resolvedCategoryIds.map((categoryId) => ({
+        providerProfileId: providerProfile.id,
+        categoryId,
+      })),
+      skipDuplicates: true,
+    });
   }
 
   return meal;
@@ -913,6 +916,87 @@ const getProviderWithMenu = async (providerId: string) => {
   return provider;
 };
 
+const createCategoryRequest = async (
+  userId: string,
+  payload: ICreateProviderCategoryPayload,
+) => {
+  await ensureProviderRole(userId);
+
+  if (!payload?.name?.trim()) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Category name is required");
+  }
+
+  const slug = slugify(payload.slug ?? payload.name);
+  if (!slug) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Category slug is invalid");
+  }
+
+  const existing = await prisma.category.findFirst({
+    where: {
+      OR: [{ name: payload.name.trim() }, { slug }],
+    },
+    select: { id: true, status: true },
+  });
+
+  if (existing) {
+    throw new AppError(
+      httpStatus.CONFLICT,
+      "Category already exists or pending approval",
+    );
+  }
+
+  return prisma.category.create({
+    data: {
+      name: payload.name.trim(),
+      slug,
+      description: payload.description,
+      status: "pending",
+      createdBy: { connect: { id: userId } },
+    },
+  });
+};
+
+const getMyCategories = async (
+  userId: string,
+  query: Record<string, string>,
+) => {
+  await ensureProviderRole(userId);
+
+  const page = Number(query.page) || 1;
+  const limit = Number(query.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  const status = query.status as "active" | "pending" | "rejected" | undefined;
+  if (status && !["active", "pending", "rejected"].includes(status)) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Invalid category status");
+  }
+
+  const where: Prisma.CategoryWhereInput = {
+    createdByUserId: userId,
+    ...(status ? { status } : {}),
+  };
+
+  const [total, categories] = await Promise.all([
+    prisma.category.count({ where }),
+    prisma.category.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
+
+  return {
+    meta: {
+      page,
+      limit,
+      total,
+      totalPage: Math.ceil(total / limit),
+    },
+    data: categories,
+  };
+};
+
 const getMyOrders = async (userId: string, query: Record<string, string>) => {
   const providerProfile = await getProviderProfileOrThrow(userId);
 
@@ -978,6 +1062,8 @@ export const ProviderServices = {
   getProviderWithMenu,
   getAllProviders,
   getMyOrders,
+  createCategoryRequest,
+  getMyCategories,
   createProviderProfile,
   updateProviderProfile,
   addMeal,

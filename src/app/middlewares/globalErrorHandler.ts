@@ -3,6 +3,7 @@ import type { NextFunction, Request, Response } from "express";
 import { envVars } from "../config/env";
 import AppError from "../helper/AppError";
 import type { TErrorSources } from "../@types/error.types";
+import { Prisma } from "../../../generated/prisma/client";
 
 // import { handleCastError } from "../helpers/handleCastError";
 // import { handlerDuplicateError } from "../helpers/handleDuplicateError";
@@ -24,39 +25,62 @@ export const globalErrorHandler = async (
   let errorSources: TErrorSources[] = [];
   let statusCode = 500;
   let message = "Something Went Wrong!!";
-  // //Duplicate error
-  if (err.code === 11000) {
-    // const simplifiedError = handlerDuplicateError(err);
-    // statusCode = simplifiedError.statusCode;
-    // message = simplifiedError.message;
-  }
-  if (err.code === "P2002") {
-    statusCode = 503;
-    message = err.message;
-  }
-  if (err.code === "P2025") {
-    statusCode = 503;
-    message = "No record found to delete/update!";
-  }
-  if (err.code === "P2003") {
-    statusCode = 503;
-    message = err.message;
-  }
-  // Object ID error / Cast Error
-  else if (err.name === "CastError") {
-    // const simplifiedError = handleCastError(err);
-    // statusCode = simplifiedError.statusCode;
-    // message = simplifiedError.message;
-  } else if (err.name === "ZodError") {
-    // const simplifiedError = handlerZodError(err);
-    // statusCode = simplifiedError.statusCode;
-    // message = simplifiedError.message;
-    // errorSources = simplifiedError.errorSources as TErrorSources[];
-  }
-  //Validation Error
-  else if (err instanceof AppError) {
+
+  if (err instanceof AppError) {
     statusCode = err.statusCode;
     message = err.message;
+  } else if (err instanceof Prisma.PrismaClientKnownRequestError) {
+    switch (err.code) {
+      case "P2002": {
+        statusCode = 409;
+        const target = (err.meta?.target as string[])?.join(", ");
+        message = target
+          ? `Duplicate value for: ${target}`
+          : "Duplicate value error";
+        break;
+      }
+      case "P2003": {
+        statusCode = 409;
+        message = "Foreign key constraint failed";
+        break;
+      }
+      case "P2025": {
+        statusCode = 404;
+        message = "Record not found";
+        break;
+      }
+      case "P2000": {
+        statusCode = 400;
+        message = "Value too long for column";
+        break;
+      }
+      case "P2011": {
+        statusCode = 400;
+        message = "Null constraint violation";
+        break;
+      }
+      case "P2014": {
+        statusCode = 409;
+        message = "Relation violation";
+        break;
+      }
+      default: {
+        statusCode = 400;
+        message = err.message;
+      }
+    }
+  } else if (err instanceof Prisma.PrismaClientValidationError) {
+    statusCode = 400;
+    message = "Invalid request data";
+  } else if (err instanceof Prisma.PrismaClientInitializationError) {
+    statusCode = 500;
+    message = "Database connection error";
+  } else if (err instanceof Prisma.PrismaClientRustPanicError) {
+    statusCode = 500;
+    message = "Database engine panic";
+  } else if (err.name === "ZodError") {
+    statusCode = 400;
+    message = "Validation error";
   } else if (err instanceof Error) {
     statusCode = 500;
     message = err.message;

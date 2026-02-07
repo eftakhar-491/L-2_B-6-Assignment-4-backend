@@ -6,6 +6,7 @@ import { sendResponse } from "../../utils/sendResponse";
 import { ProviderServices } from "./provider.service";
 import type {
   ICreateMealPayload,
+  ICreateProviderCategoryPayload,
   ICreateProviderProfilePayload,
   IUpdateMealPayload,
   IUpdateOrderStatusPayload,
@@ -146,6 +147,47 @@ export const ProviderControllers = {
         message: "Orders retrieved successfully",
         data: orders.data,
         meta: orders.meta,
+      });
+    },
+  ),
+  getMyCategories: catchAsync(
+    async (req: Request, res: Response, next: NextFunction) => {
+      const userId = req.user?.id as string;
+      if (!userId) {
+        throw new AppError(httpStatus.UNAUTHORIZED, "User not authenticated");
+      }
+
+      const categories = await ProviderServices.getMyCategories(
+        userId,
+        req.query as Record<string, string>,
+      );
+
+      sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "Categories retrieved successfully",
+        data: categories.data,
+        meta: categories.meta,
+      });
+    },
+  ),
+  createCategoryRequest: catchAsync(
+    async (req: Request, res: Response, next: NextFunction) => {
+      const userId = req.user?.id as string;
+      if (!userId) {
+        throw new AppError(httpStatus.UNAUTHORIZED, "User not authenticated");
+      }
+
+      const category = await ProviderServices.createCategoryRequest(
+        userId,
+        req.body as ICreateProviderCategoryPayload,
+      );
+
+      sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.CREATED,
+        message: "Category request submitted",
+        data: category,
       });
     },
   ),

@@ -50,6 +50,12 @@ export interface IUpdateProviderProfilePayload {
   logoSrc?: string | null;
 }
 
+export interface ICreateProviderCategoryPayload {
+  name: string;
+  slug?: string;
+  description?: string;
+}
+
 export interface ICreateMealPayload {
   title: string;
   slug?: string;

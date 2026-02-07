@@ -5,6 +5,8 @@ import { catchAsync } from "../../utils/catchAsync";
 import { sendResponse } from "../../utils/sendResponse";
 import { AdminServices } from "./admin.service";
 import type {
+  ICreateCategoryPayload,
+  IUpdateCategoryPayload,
   IUpdateUserStatusPayload,
   IVerifyProviderPayload,
 } from "./admin.interface";
@@ -49,6 +51,89 @@ const updateUserStatus = catchAsync(
 export const AdminControllers = {
   getAllUsers,
   updateUserStatus,
+  getAllOrders: catchAsync(
+    async (req: Request, res: Response, next: NextFunction) => {
+      const orders = await AdminServices.getAllOrders(
+        req.query as Record<string, string>,
+      );
+
+      sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "Orders retrieved successfully",
+        data: orders.data,
+        meta: orders.meta,
+      });
+    },
+  ),
+  getAllCategories: catchAsync(
+    async (req: Request, res: Response, next: NextFunction) => {
+      const categories = await AdminServices.getAllCategories(
+        req.query as Record<string, string>,
+      );
+
+      sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "Categories retrieved successfully",
+        data: categories.data,
+        meta: categories.meta,
+      });
+    },
+  ),
+  createCategory: catchAsync(
+    async (req: Request, res: Response, next: NextFunction) => {
+      const adminId = req.user?.id;
+      const category = await AdminServices.createCategory(
+        req.body as ICreateCategoryPayload,
+        adminId,
+      );
+
+      sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.CREATED,
+        message: "Category created successfully",
+        data: category,
+      });
+    },
+  ),
+  updateCategory: catchAsync(
+    async (req: Request, res: Response, next: NextFunction) => {
+      const categoryId = req.params.id;
+      if (!categoryId) {
+        throw new AppError(httpStatus.BAD_REQUEST, "Category ID is required");
+      }
+
+      const category = await AdminServices.updateCategory(
+        categoryId,
+        req.body as IUpdateCategoryPayload,
+      );
+
+      sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "Category updated successfully",
+        data: category,
+      });
+    },
+  ),
+  deleteCategory: catchAsync(
+    async (req: Request, res: Response, next: NextFunction) => {
+      const categoryId = req.params.id;
+      if (!categoryId) {
+        throw new AppError(httpStatus.BAD_REQUEST, "Category ID is required");
+      }
+
+      const result = await AdminServices.deleteCategory(categoryId);
+
+      sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "Category deleted successfully",
+        data: result,
+      });
+    },
+  ),
   verifyProvider: catchAsync(
     async (req: Request, res: Response, next: NextFunction) => {
       const providerId = req.params.id;

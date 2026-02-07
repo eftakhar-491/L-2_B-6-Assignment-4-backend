@@ -20,6 +20,16 @@ router.get(
   checkAuth(Role.provider),
   ProviderControllers.getMyOrders,
 );
+router.get(
+  "/categories",
+  checkAuth(Role.provider),
+  ProviderControllers.getMyCategories,
+);
+router.post(
+  "/categories",
+  checkAuth(Role.provider),
+  ProviderControllers.createCategoryRequest,
+);
 router.post("/meals", checkAuth(Role.provider), ProviderControllers.addMeal);
 router.put(
   "/meals/:id",
