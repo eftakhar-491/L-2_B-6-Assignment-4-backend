@@ -4,7 +4,10 @@ import AppError from "../../helper/AppError";
 import { catchAsync } from "../../utils/catchAsync";
 import { sendResponse } from "../../utils/sendResponse";
 import { AdminServices } from "./admin.service";
-import type { IUpdateUserStatusPayload } from "./admin.interface";
+import type {
+  IUpdateUserStatusPayload,
+  IVerifyProviderPayload,
+} from "./admin.interface";
 
 const getAllUsers = catchAsync(
   async (req: Request, res: Response, next: NextFunction) => {
@@ -46,4 +49,24 @@ const updateUserStatus = catchAsync(
 export const AdminControllers = {
   getAllUsers,
   updateUserStatus,
+  verifyProvider: catchAsync(
+    async (req: Request, res: Response, next: NextFunction) => {
+      const providerId = req.params.id;
+      if (!providerId) {
+        throw new AppError(httpStatus.BAD_REQUEST, "Provider ID is required");
+      }
+
+      const provider = await AdminServices.verifyProvider(
+        providerId,
+        req.body as IVerifyProviderPayload,
+      );
+
+      sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "Provider verification updated successfully",
+        data: provider,
+      });
+    },
+  ),
 };

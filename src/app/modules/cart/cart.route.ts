@@ -5,14 +5,30 @@ import { CartControllers } from "./cart.controller";
 
 const router = Router();
 
-router.get("/", checkAuth(Role.customer), CartControllers.getCart);
-router.post("/items", checkAuth(Role.customer), CartControllers.addItem);
-router.patch("/items/:id", checkAuth(Role.customer), CartControllers.updateItem);
+router.get(
+  "/",
+  checkAuth(Role.customer, Role.provider),
+  CartControllers.getCart,
+);
+router.post(
+  "/items",
+  checkAuth(Role.customer, Role.provider),
+  CartControllers.addItem,
+);
+router.patch(
+  "/items/:id",
+  checkAuth(Role.customer, Role.provider),
+  CartControllers.updateItem,
+);
 router.delete(
   "/items/:id",
-  checkAuth(Role.customer),
+  checkAuth(Role.customer, Role.provider),
   CartControllers.removeItem,
 );
-router.delete("/clear", checkAuth(Role.customer), CartControllers.clearCart);
+router.delete(
+  "/clear",
+  checkAuth(Role.customer, Role.provider),
+  CartControllers.clearCart,
+);
 
 export const CartRoutes = router;

@@ -77,6 +77,62 @@ const getCart = async (userId: string) => {
   );
 };
 
+// const addItem = async (userId: string, payload: IAddCartItemPayload) => {
+//   if (!payload?.mealId) {
+//     throw new AppError(httpStatus.BAD_REQUEST, "Meal ID is required");
+//   }
+
+//   const quantity = payload.quantity ?? 1;
+//   ensureQuantity(quantity);
+
+//   const optionId = payload.variantOptionId ?? null;
+//   await validateMealAndOption(payload.mealId, optionId);
+
+//   const cart = await getOrCreateCart(userId);
+
+//   const existingItem = await prisma.cartItem.findFirst({
+//     where: {
+//       cartId: cart.id,
+//       mealId: payload.mealId,
+//       variantOptionId: optionId,
+//     },
+//   });
+
+//   if (existingItem) {
+//     return prisma.cartItem.update({
+//       where: { id: existingItem.id },
+//       data: {
+//         quantity: { increment: quantity },
+//       },
+//       include: {
+//         meal: true,
+//         variantOption: {
+//           include: {
+//             variant: true,
+//           },
+//         },
+//       },
+//     });
+//   }
+
+//   return prisma.cartItem.create({
+//     data: {
+//       cart: { connect: { id: cart.id } },
+//       meal: { connect: { id: payload.mealId } },
+//       variantOptionId: optionId,
+//       quantity,
+//     },
+//     include: {
+//       meal: true,
+//       variantOption: {
+//         include: {
+//           variant: true,
+//         },
+//       },
+//     },
+//   });
+// };
+
 const addItem = async (userId: string, payload: IAddCartItemPayload) => {
   if (!payload?.mealId) {
     throw new AppError(httpStatus.BAD_REQUEST, "Meal ID is required");
@@ -94,9 +150,16 @@ const addItem = async (userId: string, payload: IAddCartItemPayload) => {
     where: {
       cartId: cart.id,
       mealId: payload.mealId,
-      variantOptionId: optionId,
+      variantOptionId: optionId, // keep null here to match "no option" items
     },
   });
+
+  const include = {
+    meal: true,
+    variantOption: {
+      include: { variant: true },
+    },
+  } as const;
 
   if (existingItem) {
     return prisma.cartItem.update({
@@ -104,14 +167,7 @@ const addItem = async (userId: string, payload: IAddCartItemPayload) => {
       data: {
         quantity: { increment: quantity },
       },
-      include: {
-        meal: true,
-        variantOption: {
-          include: {
-            variant: true,
-          },
-        },
-      },
+      include,
     });
   }
 
@@ -119,17 +175,12 @@ const addItem = async (userId: string, payload: IAddCartItemPayload) => {
     data: {
       cart: { connect: { id: cart.id } },
       meal: { connect: { id: payload.mealId } },
-      variantOptionId: optionId,
+
+      // ✅ only connect if optionId exists, otherwise omit the field
+      ...(optionId ? { variantOption: { connect: { id: optionId } } } : {}),
       quantity,
     },
-    include: {
-      meal: true,
-      variantOption: {
-        include: {
-          variant: true,
-        },
-      },
-    },
+    include,
   });
 };
 

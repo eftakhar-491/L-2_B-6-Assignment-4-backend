@@ -15,7 +15,7 @@ import type {
   OrderStatus,
   ProviderOrderStatus,
 } from "./provider.interface";
-
+import { QueryBuilder } from "../../utils/QueryBuilder";
 const slugify = (value: string) =>
   value
     .toLowerCase()
@@ -74,10 +74,7 @@ const createProviderProfile = async (
   });
 
   if (existing) {
-    throw new AppError(
-      httpStatus.CONFLICT,
-      "Provider profile already exists",
-    );
+    throw new AppError(httpStatus.CONFLICT, "Provider profile already exists");
   }
 
   const profile = await prisma.providerProfile.create({
@@ -458,11 +455,8 @@ const addMeal = async (userId: string, payload: ICreateMealPayload) => {
 
   const normalizedImages = normalizeImages(payload.images);
   const normalizedVariants = normalizeVariants(payload.variants);
-  const {
-    mealCategoryCreates,
-    categoryIdsToLink,
-    categorySlugsToLink,
-  } = normalizeCategories(payload.categories, payload.categoryIds);
+  const { mealCategoryCreates, categoryIdsToLink, categorySlugsToLink } =
+    normalizeCategories(payload.categories, payload.categoryIds);
 
   const {
     dietaryTagCreates,
@@ -600,17 +594,14 @@ const updateMeal = async (
       : []
     : undefined;
 
-  const {
-    mealCategoryCreates,
-    categoryIdsToLink,
-    categorySlugsToLink,
-  } = hasCategoryUpdate
-    ? normalizeCategories(payload.categories, payload.categoryIds)
-    : {
-        mealCategoryCreates: [],
-        categoryIdsToLink: [],
-        categorySlugsToLink: [],
-      };
+  const { mealCategoryCreates, categoryIdsToLink, categorySlugsToLink } =
+    hasCategoryUpdate
+      ? normalizeCategories(payload.categories, payload.categoryIds)
+      : {
+          mealCategoryCreates: [],
+          categoryIdsToLink: [],
+          categorySlugsToLink: [],
+        };
 
   const hasDietaryUpdate =
     payload.dietaryPreferenceIds !== undefined ||
@@ -640,7 +631,9 @@ const updateMeal = async (
 
   const data: Prisma.MealUpdateInput = {
     ...(payload.title !== undefined && { title: payload.title }),
-    ...(payload.description !== undefined && { description: payload.description }),
+    ...(payload.description !== undefined && {
+      description: payload.description,
+    }),
     ...(payload.shortDesc !== undefined && { shortDesc: payload.shortDesc }),
     ...(payload.price !== undefined && { price: payload.price }),
     ...(payload.currency !== undefined && { currency: payload.currency }),
@@ -670,7 +663,9 @@ const updateMeal = async (
   if (hasCategoryUpdate) {
     data.categories = {
       deleteMany: {},
-      ...(mealCategoryCreates.length > 0 ? { create: mealCategoryCreates } : {}),
+      ...(mealCategoryCreates.length > 0
+        ? { create: mealCategoryCreates }
+        : {}),
     };
   }
 
@@ -826,96 +821,101 @@ const updateOrderStatus = async (
   return updatedOrder;
 };
 
-export const ProviderServices = {
-  getAllProviders: async (query: Record<string, string>) => {
-    const { searchTerm, categoryId, isVerified, sort, page, limit } = query;
+const getAllProviders = async (query: Record<string, string>) => {
+  const { categoryId, isVerified } = query;
 
-    const where: Prisma.ProviderProfileWhereInput = {};
+  const qb = new QueryBuilder<
+    Prisma.ProviderProfileWhereInput,
+    Prisma.ProviderProfileSelect,
+    Prisma.ProviderProfileOrderByWithRelationInput[]
+  >(query)
+    // searchTerm is handled here
+    .search(["name", "description", "address"])
+    // filter() will copy other query fields except excludeField
+    .filter()
+    .sort()
+    .paginate();
 
-    const verifiedFilter = parseBoolean(isVerified);
-    where.isVerified = verifiedFilter ?? true;
+  const built = qb.build();
 
-    if (searchTerm) {
-      where.OR = [
-        { name: { contains: searchTerm, mode: "insensitive" } },
-        { description: { contains: searchTerm, mode: "insensitive" } },
-        { address: { contains: searchTerm, mode: "insensitive" } },
-      ];
-    }
+  // ✅ enforce verified default = true (your previous behavior)
+  const verifiedFilter = parseBoolean(isVerified);
+  built.where.isVerified = verifiedFilter ?? true;
 
-    if (categoryId) {
-      where.categories = {
-        some: {
-          categoryId,
+  // ✅ relational filter for category
+  if (categoryId) {
+    built.where.categories = {
+      some: { categoryId },
+    };
+  }
+
+  // ✅ include relations
+  const findQuery: Prisma.ProviderProfileFindManyArgs = {
+    ...built,
+    include: {
+      categories: { include: { category: true } },
+    },
+  };
+
+  // ✅ IMPORTANT: do NOT count inside a DB transaction (see error section below)
+  const [total, providers] = await Promise.all([
+    prisma.providerProfile.count({ where: built.where }),
+    prisma.providerProfile.findMany(findQuery),
+  ]);
+
+  const pageNumber = Number(query.page) || 1;
+  const limitNumber = Number(query.limit) || 10;
+
+  return {
+    meta: {
+      page: pageNumber,
+      limit: limitNumber,
+      total,
+      totalPage: Math.ceil(total / limitNumber),
+    },
+    data: providers,
+  };
+};
+
+const getProviderWithMenu = async (providerId: string) => {
+  if (!providerId) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Provider ID is required");
+  }
+
+  const provider = await prisma.providerProfile.findUnique({
+    where: { id: providerId },
+    include: {
+      categories: {
+        include: { category: true },
+      },
+      meals: {
+        where: {
+          deletedAt: null,
+          isActive: true,
         },
-      };
-    }
-
-    const { page: pageNumber, limit: limitNumber, skip, take } =
-      parsePagination(page, limit);
-
-    const orderBy = parseSort(sort);
-
-    const [total, providers] = await prisma.$transaction([
-      prisma.providerProfile.count({ where }),
-      prisma.providerProfile.findMany({
-        where,
-        skip,
-        take,
-        orderBy,
         include: {
+          images: {
+            where: { isPrimary: true },
+          },
           categories: {
             include: { category: true },
           },
         },
-      }),
-    ]);
-
-    return {
-      meta: {
-        page: pageNumber,
-        limit: limitNumber,
-        total,
-        totalPage: Math.ceil(total / limitNumber),
+        orderBy: { createdAt: "desc" },
       },
-      data: providers,
-    };
-  },
-  getProviderWithMenu: async (providerId: string) => {
-    if (!providerId) {
-      throw new AppError(httpStatus.BAD_REQUEST, "Provider ID is required");
-    }
+    },
+  });
 
-    const provider = await prisma.providerProfile.findUnique({
-      where: { id: providerId },
-      include: {
-        categories: {
-          include: { category: true },
-        },
-        meals: {
-          where: {
-            deletedAt: null,
-            isActive: true,
-          },
-          include: {
-            images: {
-              where: { isPrimary: true },
-            },
-            categories: {
-              include: { category: true },
-            },
-          },
-          orderBy: { createdAt: "desc" },
-        },
-      },
-    });
+  if (!provider || !provider.isVerified) {
+    throw new AppError(httpStatus.NOT_FOUND, "Provider not found");
+  }
 
-    if (!provider || !provider.isVerified) {
-      throw new AppError(httpStatus.NOT_FOUND, "Provider not found");
-    }
+  return provider;
+};
 
-    return provider;
-  },
+export const ProviderServices = {
+  getProviderWithMenu,
+  getAllProviders,
   createProviderProfile,
   updateProviderProfile,
   addMeal,

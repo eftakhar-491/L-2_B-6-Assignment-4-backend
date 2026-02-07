@@ -7,3 +7,4 @@ router.get("/", MealControllers.getAllMeals);
 router.get("/:id", MealControllers.getMealById);
 
 export const MealRoutes = router;
+

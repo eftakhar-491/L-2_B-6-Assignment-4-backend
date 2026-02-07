@@ -11,5 +11,10 @@ router.patch(
   checkAuth(Role.admin),
   AdminControllers.updateUserStatus,
 );
+router.patch(
+  "/providers/:id/verify",
+  checkAuth(Role.admin),
+  AdminControllers.verifyProvider,
+);
 
 export const AdminRoutes = router;

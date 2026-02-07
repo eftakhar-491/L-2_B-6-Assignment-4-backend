@@ -57,7 +57,7 @@ const updateItem = catchAsync(
 
     const item = await CartServices.updateItem(
       userId,
-      req.params.id,
+      req.params.id as string,
       req.body as IUpdateCartItemPayload,
     );
 
@@ -77,7 +77,10 @@ const removeItem = catchAsync(
       throw new AppError(httpStatus.UNAUTHORIZED, "User not authenticated");
     }
 
-    const result = await CartServices.removeItem(userId, req.params.id);
+    const result = await CartServices.removeItem(
+      userId,
+      req.params.id as string,
+    );
 
     sendResponse(res, {
       success: true,

@@ -1,7 +1,10 @@
 import httpStatus from "http-status-codes";
 import AppError from "../../helper/AppError";
 import { prisma } from "../../lib/prisma";
-import type { IUpdateUserStatusPayload } from "./admin.interface";
+import type {
+  IUpdateUserStatusPayload,
+  IVerifyProviderPayload,
+} from "./admin.interface";
 
 const getAllUsers = async (query: Record<string, string>) => {
   const { page, limit, searchTerm } = query;
@@ -92,4 +95,32 @@ const updateUserStatus = async (
 export const AdminServices = {
   getAllUsers,
   updateUserStatus,
+  verifyProvider: async (
+    providerId: string,
+    payload: IVerifyProviderPayload,
+  ) => {
+    if (!providerId) {
+      throw new AppError(httpStatus.BAD_REQUEST, "Provider ID is required");
+    }
+
+    if (payload?.isVerified === undefined) {
+      throw new AppError(httpStatus.BAD_REQUEST, "isVerified is required");
+    }
+
+    const provider = await prisma.providerProfile.findUnique({
+      where: { id: providerId },
+      select: { id: true },
+    });
+
+    if (!provider) {
+      throw new AppError(httpStatus.NOT_FOUND, "Provider not found");
+    }
+
+    return prisma.providerProfile.update({
+      where: { id: providerId },
+      data: {
+        isVerified: payload.isVerified,
+      },
+    });
+  },
 };
