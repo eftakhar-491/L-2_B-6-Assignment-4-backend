@@ -6,7 +6,11 @@ import httpStatus from "http-status-codes";
 import { UserServices } from "./user.service";
 import AppError from "../../helper/AppError";
 
-import { type IUser } from "./user.interface";
+import type {
+  ICreateAddressPayload,
+  IUpdateAddressPayload,
+  IUser,
+} from "./user.interface";
 
 // const updateUser = catchAsync(
 //   async (req: Request, res: Response, next: NextFunction) => {
@@ -225,4 +229,84 @@ export const UserControllers = {
   getSingleUser,
   getMe,
   updateUser,
+  createAddress: catchAsync(
+    async (req: Request, res: Response, next: NextFunction) => {
+      const decodedHeader = req.user;
+      if (!decodedHeader) {
+        throw new AppError(httpStatus.UNAUTHORIZED, "User not authenticated");
+      }
+
+      const address = await UserServices.createAddress(
+        (decodedHeader as IUser).id,
+        req.body as ICreateAddressPayload,
+      );
+
+      sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.CREATED,
+        message: "Address created successfully",
+        data: address,
+      });
+    },
+  ),
+  getMyAddresses: catchAsync(
+    async (req: Request, res: Response, next: NextFunction) => {
+      const decodedHeader = req.user;
+      if (!decodedHeader) {
+        throw new AppError(httpStatus.UNAUTHORIZED, "User not authenticated");
+      }
+
+      const addresses = await UserServices.getMyAddresses(
+        (decodedHeader as IUser).id,
+      );
+
+      sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "Addresses retrieved successfully",
+        data: addresses,
+      });
+    },
+  ),
+  updateAddress: catchAsync(
+    async (req: Request, res: Response, next: NextFunction) => {
+      const decodedHeader = req.user;
+      if (!decodedHeader) {
+        throw new AppError(httpStatus.UNAUTHORIZED, "User not authenticated");
+      }
+
+      const address = await UserServices.updateAddress(
+        (decodedHeader as IUser).id,
+        req.params.id as string,
+        req.body as IUpdateAddressPayload,
+      );
+
+      sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "Address updated successfully",
+        data: address,
+      });
+    },
+  ),
+  deleteAddress: catchAsync(
+    async (req: Request, res: Response, next: NextFunction) => {
+      const decodedHeader = req.user;
+      if (!decodedHeader) {
+        throw new AppError(httpStatus.UNAUTHORIZED, "User not authenticated");
+      }
+
+      const result = await UserServices.deleteAddress(
+        (decodedHeader as IUser).id,
+        req.params.id as string,
+      );
+
+      sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "Address deleted successfully",
+        data: result,
+      });
+    },
+  ),
 };

@@ -6,6 +6,8 @@ import cors from "cors";
 import { router } from "./app/routes";
 // import { envVars } from "./app/config/env";
 // import expressSession from "express-session";
+import { globalErrorHandler } from "./app/middlewares/globalErrorHandler";
+import notFound from "./app/middlewares/notFound";
 
 // import { router } from "./app/routes";
 import { toNodeHandler } from "better-auth/node";
@@ -62,5 +64,5 @@ app.get("/", (_, res) => {
   });
 });
 
-// app.use(globalErrorHandler);
-// app.use(notFound);
+app.use(globalErrorHandler);
+app.use(notFound);

@@ -23,3 +23,19 @@ export interface IUser {
   createdAt: Date;
   updatedAt: Date;
 }
+
+export interface ICreateAddressPayload {
+  label?: string;
+  fullAddress: string;
+  lat?: number | string | null;
+  lng?: number | string | null;
+  phone?: string | null;
+}
+
+export interface IUpdateAddressPayload {
+  label?: string | null;
+  fullAddress?: string;
+  lat?: number | string | null;
+  lng?: number | string | null;
+  phone?: string | null;
+}

@@ -14,7 +14,7 @@ export interface ICreateOrderPayload {
   deliveryAddressId: string;
   paymentMethod?: PaymentMethod;
   notes?: string;
-  items: IOrderItemInput[];
+  items?: IOrderItemInput[];
 }
 
 export interface IOrderItemSummary {

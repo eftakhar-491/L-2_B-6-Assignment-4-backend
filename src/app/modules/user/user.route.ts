@@ -37,4 +37,32 @@ router.patch(
   UserControllers.updateMe,
 );
 
+router.post(
+  "/addresses",
+  checkAuth(...Object.values(Role)),
+  checkRole(...Object.values(Role)),
+  UserControllers.createAddress,
+);
+
+router.get(
+  "/addresses",
+  checkAuth(...Object.values(Role)),
+  checkRole(...Object.values(Role)),
+  UserControllers.getMyAddresses,
+);
+
+router.patch(
+  "/addresses/:id",
+  checkAuth(...Object.values(Role)),
+  checkRole(...Object.values(Role)),
+  UserControllers.updateAddress,
+);
+
+router.delete(
+  "/addresses/:id",
+  checkAuth(...Object.values(Role)),
+  checkRole(...Object.values(Role)),
+  UserControllers.deleteAddress,
+);
+
 export const UserRoutes = router;

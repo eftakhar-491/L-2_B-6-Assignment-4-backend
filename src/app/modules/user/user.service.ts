@@ -5,7 +5,13 @@ import { QueryBuilder } from "../../utils/QueryBuilder";
 import type { Prisma } from "../../../../generated/prisma/browser";
 import { prisma } from "../../lib/prisma";
 import { auth } from "../../lib/auth";
-import type { IUser, Role, UserStatus } from "./user.interface";
+import type {
+  ICreateAddressPayload,
+  IUpdateAddressPayload,
+  IUser,
+  Role,
+  UserStatus,
+} from "./user.interface";
 
 export const getAllUsers = async (query: Record<string, string>) => {
   const qb = new QueryBuilder<
@@ -162,10 +168,106 @@ export const updateUser = async (userId: string, payload: Partial<IUser>) => {
   return updatedUser;
 };
 
+const createAddress = async (
+  userId: string,
+  payload: ICreateAddressPayload,
+) => {
+  if (!payload?.fullAddress?.trim()) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Full address is required");
+  }
+
+  const address = await prisma.address.create({
+    data: {
+      user: { connect: { id: userId } },
+      label: payload.label ?? null,
+      fullAddress: payload.fullAddress,
+      lat: payload.lat ?? null,
+      lng: payload.lng ?? null,
+      phone: payload.phone ?? null,
+    },
+  });
+
+  return address;
+};
+
+const getMyAddresses = async (userId: string) => {
+  return prisma.address.findMany({
+    where: { userId },
+    orderBy: { createdAt: "desc" },
+  });
+};
+
+const updateAddress = async (
+  userId: string,
+  addressId: string,
+  payload: IUpdateAddressPayload,
+) => {
+  if (!addressId) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Address ID is required");
+  }
+
+  const existing = await prisma.address.findFirst({
+    where: { id: addressId, userId },
+    select: { id: true },
+  });
+
+  if (!existing) {
+    throw new AppError(httpStatus.NOT_FOUND, "Address not found");
+  }
+
+  if (
+    payload.label === undefined &&
+    payload.fullAddress === undefined &&
+    payload.lat === undefined &&
+    payload.lng === undefined &&
+    payload.phone === undefined
+  ) {
+    throw new AppError(httpStatus.BAD_REQUEST, "No address fields to update");
+  }
+
+  return prisma.address.update({
+    where: { id: addressId },
+    data: {
+      ...(payload.label !== undefined && { label: payload.label }),
+      ...(payload.fullAddress !== undefined && {
+        fullAddress: payload.fullAddress,
+      }),
+      ...(payload.lat !== undefined && { lat: payload.lat }),
+      ...(payload.lng !== undefined && { lng: payload.lng }),
+      ...(payload.phone !== undefined && { phone: payload.phone }),
+    },
+  });
+};
+
+const deleteAddress = async (userId: string, addressId: string) => {
+  if (!addressId) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Address ID is required");
+  }
+
+  const existing = await prisma.address.findFirst({
+    where: { id: addressId, userId },
+    select: { id: true },
+  });
+
+  if (!existing) {
+    throw new AppError(httpStatus.NOT_FOUND, "Address not found");
+  }
+
+  await prisma.address.delete({
+    where: { id: addressId },
+  });
+
+  return { id: addressId };
+};
+
 export const UserServices = {
   getAllUsers,
   getSingleUser,
   updateUser,
   getMe,
   updateMe,
+  createAddress,
+  getMyAddresses,
+  updateAddress,
+  deleteAddress,
 };

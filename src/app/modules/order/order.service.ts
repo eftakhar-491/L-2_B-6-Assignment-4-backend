@@ -2,7 +2,7 @@ import httpStatus from "http-status-codes";
 import type { Prisma } from "../../../../generated/prisma/browser";
 import AppError from "../../helper/AppError";
 import { prisma } from "../../lib/prisma";
-import type { ICreateOrderPayload, IOrderItemInput } from "./order.interface";
+import type { ICreateOrderPayload } from "./order.interface";
 
 const ensureQuantity = (quantity: number) => {
   if (!Number.isInteger(quantity) || quantity <= 0) {
@@ -13,87 +13,63 @@ const ensureQuantity = (quantity: number) => {
   }
 };
 
-const buildOrderItems = async (
-  items: IOrderItemInput[],
+const buildOrderFromCart = async (
+  userId: string,
   providerProfileId: string,
 ) => {
-  const mealIds = items.map((item) => item.mealId);
-  const uniqueMealIds = Array.from(new Set(mealIds));
-  const meals = await prisma.meal.findMany({
-    where: {
-      id: { in: uniqueMealIds },
-      providerProfileId,
-      deletedAt: null,
-      isActive: true,
-    },
-    select: {
-      id: true,
-      price: true,
-      stock: true,
-      currency: true,
+  const cart = await prisma.cart.findUnique({
+    where: { userId },
+    include: {
+      items: {
+        include: {
+          meal: {
+            select: {
+              id: true,
+              price: true,
+              stock: true,
+              currency: true,
+              providerProfileId: true,
+              deletedAt: true,
+              isActive: true,
+            },
+          },
+          variantOption: {
+            include: {
+              variant: {
+                select: { mealId: true },
+              },
+            },
+          },
+        },
+      },
     },
   });
 
-  if (meals.length !== uniqueMealIds.length) {
-    throw new AppError(
-      httpStatus.BAD_REQUEST,
-      "One or more meals are invalid for this provider",
-    );
-  }
-
-  const mealMap = new Map(
-    meals.map((meal) => [meal.id, meal] as const),
-  );
-
-  const optionIds = Array.from(
-    new Set(
-      items.flatMap((item) => item.variantOptionIds ?? []),
-    ),
-  );
-
-  const optionMap = new Map<
-    string,
-    { mealId: string; priceDelta: number }
-  >();
-
-  if (optionIds.length) {
-    const options = await prisma.mealVariantOption.findMany({
-      where: { id: { in: optionIds } },
-      include: {
-        variant: {
-          select: { mealId: true },
-        },
-      },
-    });
-
-    if (options.length !== optionIds.length) {
-      throw new AppError(
-        httpStatus.BAD_REQUEST,
-        "One or more variant options are invalid",
-      );
-    }
-
-    options.forEach((option) => {
-      optionMap.set(option.id, {
-        mealId: option.variant.mealId,
-        priceDelta: Number(option.priceDelta),
-      });
-    });
+  if (!cart || cart.items.length === 0) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Cart is empty");
   }
 
   const quantityByMeal = new Map<string, number>();
+  const mealsToDecrement = new Map<string, number>();
   const orderItems: Prisma.OrderItemCreateWithoutOrderInput[] = [];
   let totalAmount = 0;
   let currency: string | null = null;
 
-  items.forEach((item) => {
+  cart.items.forEach((item) => {
     ensureQuantity(item.quantity);
 
-    const meal = mealMap.get(item.mealId);
-    if (!meal) {
+    const meal = item.meal;
+    if (!meal || meal.deletedAt || !meal.isActive) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
-        "One or more meals are invalid",
+        "One or more meals in cart are unavailable",
+      );
+    }
+
+    if (meal.providerProfileId !== providerProfileId) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        "Cart contains items from another provider",
       );
     }
 
@@ -105,30 +81,27 @@ const buildOrderItems = async (
     }
     currency = meal.currency;
 
-    const optionIdsForItem = Array.from(
-      new Set(item.variantOptionIds ?? []),
-    );
-    let priceDeltaSum = 0;
+    let priceDelta = 0;
     const optionCreates: Prisma.OrderItemOptionCreateWithoutOrderItemInput[] =
       [];
 
-    optionIdsForItem.forEach((optionId) => {
-      const option = optionMap.get(optionId);
-      if (!option || option.mealId !== meal.id) {
+    if (item.variantOptionId) {
+      const option = item.variantOption;
+      if (!option || option.variant.mealId !== meal.id) {
         throw new AppError(
           httpStatus.BAD_REQUEST,
           "Variant option does not belong to the meal",
         );
       }
 
-      priceDeltaSum += option.priceDelta;
+      priceDelta = Number(option.priceDelta);
       optionCreates.push({
-        variantOption: { connect: { id: optionId } },
-        priceDelta: option.priceDelta,
+        variantOption: { connect: { id: option.id } },
+        priceDelta,
       });
-    });
+    }
 
-    const unitPrice = Number(meal.price) + priceDeltaSum;
+    const unitPrice = Number(meal.price) + priceDelta;
     const subtotal = unitPrice * item.quantity;
     totalAmount += subtotal;
 
@@ -142,15 +115,12 @@ const buildOrderItems = async (
       quantity: item.quantity,
       unitPrice,
       subtotal,
-      notes: item.notes,
       ...(optionCreates.length > 0 && { options: { create: optionCreates } }),
     });
   });
 
-  const mealsToDecrement = new Map<string, number>();
-
   quantityByMeal.forEach((qty, mealId) => {
-    const meal = mealMap.get(mealId);
+    const meal = cart.items.find((item) => item.meal.id === mealId)?.meal;
     if (meal?.stock !== null && meal?.stock !== undefined) {
       if (meal.stock < qty) {
         throw new AppError(
@@ -167,6 +137,7 @@ const buildOrderItems = async (
     totalAmount,
     currency: currency ?? "USD",
     mealsToDecrement,
+    cartId: cart.id,
   };
 };
 
@@ -176,9 +147,6 @@ const createOrder = async (userId: string, payload: ICreateOrderPayload) => {
   }
   if (!payload.deliveryAddressId) {
     throw new AppError(httpStatus.BAD_REQUEST, "Delivery address is required");
-  }
-  if (!payload.items?.length) {
-    throw new AppError(httpStatus.BAD_REQUEST, "Order items are required");
   }
   if (payload.paymentMethod && payload.paymentMethod !== "cash_on_delivery") {
     throw new AppError(httpStatus.BAD_REQUEST, "Only cash on delivery is allowed");
@@ -205,8 +173,8 @@ const createOrder = async (userId: string, payload: ICreateOrderPayload) => {
     throw new AppError(httpStatus.NOT_FOUND, "Delivery address not found");
   }
 
-  const { orderItems, totalAmount, currency, mealsToDecrement } =
-    await buildOrderItems(payload.items, payload.providerProfileId);
+  const { orderItems, totalAmount, currency, mealsToDecrement, cartId } =
+    await buildOrderFromCart(userId, payload.providerProfileId);
 
   const order = await prisma.$transaction(async (tx) => {
     for (const [mealId, qty] of mealsToDecrement.entries()) {
@@ -255,6 +223,10 @@ const createOrder = async (userId: string, payload: ICreateOrderPayload) => {
         },
         address: true,
       },
+    });
+
+    await tx.cartItem.deleteMany({
+      where: { cartId },
     });
 
     return createdOrder;

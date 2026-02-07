@@ -5,12 +5,24 @@ import { OrderControllers } from "./order.controller";
 
 const router = Router();
 
-router.post("/", checkAuth(Role.customer), OrderControllers.createOrder);
-router.get("/", checkAuth(Role.customer), OrderControllers.getMyOrders);
-router.get("/:id", checkAuth(Role.customer), OrderControllers.getOrderById);
+router.get(
+  "/",
+  checkAuth(Role.customer, Role.provider),
+  OrderControllers.getMyOrders,
+);
+router.post(
+  "/",
+  checkAuth(Role.customer, Role.provider),
+  OrderControllers.createOrder,
+);
+router.get(
+  "/:id",
+  checkAuth(Role.customer, Role.provider),
+  OrderControllers.getOrderById,
+);
 router.patch(
-  "/:id/cancel",
-  checkAuth(Role.customer),
+  "/cancel/:id",
+  checkAuth(Role.customer, Role.provider),
   OrderControllers.cancelOrder,
 );
 

@@ -3,7 +3,7 @@ import type { NextFunction, Request, Response } from "express";
 import { envVars } from "../config/env";
 import AppError from "../helper/AppError";
 import type { TErrorSources } from "../@types/error.types";
-import { cleanupImages } from "../utils/cleanupImage";
+
 // import { handleCastError } from "../helpers/handleCastError";
 // import { handlerDuplicateError } from "../helpers/handleDuplicateError";
 // import { handlerValidationError } from "../helpers/handlerValidationError";
@@ -15,15 +15,6 @@ export const globalErrorHandler = async (
   res: Response,
   next: NextFunction,
 ) => {
-  await cleanupImages(
-    req.uploadedImages as
-      | {
-          storageType: "local" | "cloudinary" | "custom";
-          src?: string;
-          publicId?: string;
-        }[]
-      | undefined,
-  );
   if (envVars.NODE_ENV === "development") {
     console.log("============================================");
     console.log(err);
