@@ -913,9 +913,71 @@ const getProviderWithMenu = async (providerId: string) => {
   return provider;
 };
 
+const getMyOrders = async (userId: string, query: Record<string, string>) => {
+  const providerProfile = await getProviderProfileOrThrow(userId);
+
+  const page = Number(query.page) || 1;
+  const limit = Number(query.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  const status = query.status as OrderStatus | undefined;
+  const where: Prisma.OrderWhereInput = {
+    providerProfileId: providerProfile.id,
+    ...(status && { status }),
+  };
+
+  const [total, orders] = await Promise.all([
+    prisma.order.count({ where }),
+    prisma.order.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy: { placedAt: "desc" },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+          },
+        },
+        address: true,
+        items: {
+          include: {
+            meal: {
+              select: {
+                id: true,
+                title: true,
+                price: true,
+              },
+            },
+            options: {
+              include: {
+                variantOption: true,
+              },
+            },
+          },
+        },
+      },
+    }),
+  ]);
+
+  return {
+    meta: {
+      page,
+      limit,
+      total,
+      totalPage: Math.ceil(total / limit),
+    },
+    data: orders,
+  };
+};
+
 export const ProviderServices = {
   getProviderWithMenu,
   getAllProviders,
+  getMyOrders,
   createProviderProfile,
   updateProviderProfile,
   addMeal,

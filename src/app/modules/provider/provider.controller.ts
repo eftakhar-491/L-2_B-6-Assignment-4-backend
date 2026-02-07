@@ -128,6 +128,27 @@ export const ProviderControllers = {
       });
     },
   ),
+  getMyOrders: catchAsync(
+    async (req: Request, res: Response, next: NextFunction) => {
+      const userId = req.user?.id as string;
+      if (!userId) {
+        throw new AppError(httpStatus.UNAUTHORIZED, "User not authenticated");
+      }
+
+      const orders = await ProviderServices.getMyOrders(
+        userId,
+        req.query as Record<string, string>,
+      );
+
+      sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "Orders retrieved successfully",
+        data: orders.data,
+        meta: orders.meta,
+      });
+    },
+  ),
   createProviderProfile: catchAsync(
     async (req: Request, res: Response, next: NextFunction) => {
       const userId = req.user?.id as string;

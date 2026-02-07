@@ -15,8 +15,17 @@ router.patch(
   checkAuth(Role.provider),
   ProviderControllers.updateProviderProfile,
 );
+router.get(
+  "/orders",
+  checkAuth(Role.provider),
+  ProviderControllers.getMyOrders,
+);
 router.post("/meals", checkAuth(Role.provider), ProviderControllers.addMeal);
-router.put("/meals/:id", checkAuth(Role.provider), ProviderControllers.updateMeal);
+router.put(
+  "/meals/:id",
+  checkAuth(Role.provider),
+  ProviderControllers.updateMeal,
+);
 router.delete(
   "/meals/:id",
   checkAuth(Role.provider),
