@@ -46,13 +46,13 @@ app.use(
 
 app.use(
   "/api/auth",
-  (req, res, next) => {
-    const { role } = req.body;
-    if (role && role === "admin") {
-      req.body.status = "pending";
-    }
-    next();
-  },
+  // (req, res, next) => {
+  //   const { role } = req?.body;
+  //   if (role && role === "admin") {
+  //     req.body.status = "pending";
+  //   }
+  //   next();
+  // },
   toNodeHandler(auth),
 );
 app.use("/api", router);

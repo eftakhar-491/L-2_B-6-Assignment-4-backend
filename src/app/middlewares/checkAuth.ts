@@ -3,7 +3,19 @@ import httpStatus from "http-status-codes";
 import { auth } from "../lib/auth";
 
 import type { NextFunction, Request, Response } from "express";
-import { UserStatus } from "../modules/user/user.interface";
+import { Role, UserStatus } from "../modules/user/user.interface";
+
+const canAccessRole = (userRole: string, authRoles: string[]) => {
+  if (!authRoles.length) return true;
+  if (authRoles.includes(userRole)) return true;
+
+  // super_admin inherits admin permissions
+  if (userRole === Role.super_admin && authRoles.includes(Role.admin)) {
+    return true;
+  }
+
+  return false;
+};
 
 export const checkAuth =
   (...authRoles: string[]) =>
@@ -13,7 +25,7 @@ export const checkAuth =
         headers: req.headers as Record<string, string>,
       });
 
-      if (session?.user && !authRoles.includes(session.user.role)) {
+      if (session?.user && !canAccessRole(session.user.role, authRoles)) {
         return res.status(httpStatus.FORBIDDEN).json({
           success: false,
           message: "You do not have permission to access this resource",

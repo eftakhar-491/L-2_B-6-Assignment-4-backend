@@ -1,6 +1,7 @@
 export interface IAddCartItemPayload {
   mealId: string;
   variantOptionId?: string | null;
+  variantOptionIds?: string[];
   quantity?: number;
 }
 

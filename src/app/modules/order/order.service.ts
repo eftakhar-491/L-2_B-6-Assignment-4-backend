@@ -2,7 +2,7 @@ import httpStatus from "http-status-codes";
 import type { Prisma } from "../../../../generated/prisma/browser";
 import AppError from "../../helper/AppError";
 import { prisma } from "../../lib/prisma";
-import type { ICreateOrderPayload } from "./order.interface";
+import type { ICreateOrderPayload, IOrderItemInput } from "./order.interface";
 
 const ensureQuantity = (quantity: number) => {
   if (!Number.isInteger(quantity) || quantity <= 0) {
@@ -13,10 +13,29 @@ const ensureQuantity = (quantity: number) => {
   }
 };
 
+const toNumber = (value: unknown, field: string) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      `Invalid numeric value for ${field}`,
+    );
+  }
+  return parsed;
+};
+
+interface IBuildOrderResult {
+  orderItems: Prisma.OrderItemCreateWithoutOrderInput[];
+  totalAmount: number;
+  currency: string;
+  mealsToDecrement: Map<string, number>;
+  cartId?: string;
+}
+
 const buildOrderFromCart = async (
   userId: string,
   providerProfileId: string,
-) => {
+): Promise<IBuildOrderResult> => {
   const cart = await prisma.cart.findUnique({
     where: { userId },
     include: {
@@ -37,6 +56,17 @@ const buildOrderFromCart = async (
             include: {
               variant: {
                 select: { mealId: true },
+              },
+            },
+          },
+          options: {
+            include: {
+              variantOption: {
+                include: {
+                  variant: {
+                    select: { mealId: true },
+                  },
+                },
               },
             },
           },
@@ -85,8 +115,20 @@ const buildOrderFromCart = async (
     const optionCreates: Prisma.OrderItemOptionCreateWithoutOrderItemInput[] =
       [];
 
-    if (item.variantOptionId) {
-      const option = item.variantOption;
+    const selectedOptions =
+      item.options && item.options.length > 0
+        ? item.options
+        : item.variantOption
+          ? [
+              {
+                variantOption: item.variantOption,
+                priceDelta: item.variantOption.priceDelta,
+              },
+            ]
+          : [];
+
+    selectedOptions.forEach((cartOption) => {
+      const option = cartOption.variantOption;
       if (!option || option.variant.mealId !== meal.id) {
         throw new AppError(
           httpStatus.BAD_REQUEST,
@@ -94,14 +136,18 @@ const buildOrderFromCart = async (
         );
       }
 
-      priceDelta = Number(option.priceDelta);
+      const delta = toNumber(
+        cartOption.priceDelta,
+        "variant option priceDelta",
+      );
+      priceDelta += delta;
       optionCreates.push({
         variantOption: { connect: { id: option.id } },
-        priceDelta,
+        priceDelta: delta,
       });
-    }
+    });
 
-    const unitPrice = Number(meal.price) + priceDelta;
+    const unitPrice = toNumber(meal.price, "meal price") + priceDelta;
     const subtotal = unitPrice * item.quantity;
     totalAmount += subtotal;
 
@@ -141,6 +187,195 @@ const buildOrderFromCart = async (
   };
 };
 
+const buildOrderFromItems = async (
+  providerProfileId: string,
+  items: IOrderItemInput[],
+): Promise<IBuildOrderResult> => {
+  if (!items.length) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Order items are required");
+  }
+
+  const mealIds = Array.from(
+    new Set(items.map((item) => item.mealId).filter(Boolean)),
+  );
+  if (!mealIds.length) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Meal IDs are required");
+  }
+
+  const meals = await prisma.meal.findMany({
+    where: {
+      id: { in: mealIds },
+      deletedAt: null,
+      isActive: true,
+    },
+    select: {
+      id: true,
+      price: true,
+      stock: true,
+      currency: true,
+      providerProfileId: true,
+    },
+  });
+
+  const mealById = new Map(meals.map((meal) => [meal.id, meal] as const));
+
+  if (mealById.size !== mealIds.length) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      "One or more meals are unavailable",
+    );
+  }
+
+  const optionIds = Array.from(
+    new Set(
+      items.flatMap((item) => item.variantOptionIds ?? []).filter(Boolean),
+    ),
+  );
+
+  const variantOptionById = new Map<
+    string,
+    {
+      id: string;
+      priceDelta: unknown;
+      variant: { id: string; mealId: string };
+    }
+  >();
+
+  if (optionIds.length) {
+    const options = await prisma.mealVariantOption.findMany({
+      where: {
+        id: { in: optionIds },
+      },
+      select: {
+        id: true,
+        priceDelta: true,
+        variant: {
+          select: {
+            id: true,
+            mealId: true,
+          },
+        },
+      },
+    });
+
+    if (options.length !== optionIds.length) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        "One or more variant options are invalid",
+      );
+    }
+
+    options.forEach((option) => {
+      variantOptionById.set(option.id, option);
+    });
+  }
+
+  const quantityByMeal = new Map<string, number>();
+  const mealsToDecrement = new Map<string, number>();
+  const orderItems: Prisma.OrderItemCreateWithoutOrderInput[] = [];
+  let totalAmount = 0;
+  let currency: string | null = null;
+
+  items.forEach((item) => {
+    if (!item.mealId) {
+      throw new AppError(httpStatus.BAD_REQUEST, "Meal ID is required");
+    }
+
+    ensureQuantity(item.quantity);
+
+    const meal = mealById.get(item.mealId);
+    if (!meal) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        "One or more meals are unavailable",
+      );
+    }
+
+    if (meal.providerProfileId !== providerProfileId) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        "Order contains items from another provider",
+      );
+    }
+
+    if (currency && currency !== meal.currency) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        "All meals in an order must use the same currency",
+      );
+    }
+    currency = meal.currency;
+
+    const uniqueOptionIds = Array.from(new Set(item.variantOptionIds ?? []));
+    const variantIdsInItem = new Set<string>();
+
+    let priceDelta = 0;
+    const optionCreates: Prisma.OrderItemOptionCreateWithoutOrderItemInput[] =
+      [];
+
+    uniqueOptionIds.forEach((optionId) => {
+      const option = variantOptionById.get(optionId);
+      if (!option || option.variant.mealId !== meal.id) {
+        throw new AppError(
+          httpStatus.BAD_REQUEST,
+          "Variant option does not belong to the meal",
+        );
+      }
+
+      // Protect data integrity: only one option per variant group.
+      if (variantIdsInItem.has(option.variant.id)) {
+        throw new AppError(
+          httpStatus.BAD_REQUEST,
+          "Only one option can be selected from each variant",
+        );
+      }
+      variantIdsInItem.add(option.variant.id);
+
+      const delta = toNumber(option.priceDelta, "variant option priceDelta");
+      priceDelta += delta;
+      optionCreates.push({
+        variantOption: { connect: { id: option.id } },
+        priceDelta: delta,
+      });
+    });
+
+    const unitPrice = toNumber(meal.price, "meal price") + priceDelta;
+    const subtotal = unitPrice * item.quantity;
+    totalAmount += subtotal;
+
+    quantityByMeal.set(meal.id, (quantityByMeal.get(meal.id) ?? 0) + item.quantity);
+
+    orderItems.push({
+      meal: { connect: { id: meal.id } },
+      quantity: item.quantity,
+      unitPrice,
+      subtotal,
+      notes: item.notes,
+      ...(optionCreates.length > 0 && { options: { create: optionCreates } }),
+    });
+  });
+
+  quantityByMeal.forEach((qty, mealId) => {
+    const meal = mealById.get(mealId);
+    if (meal?.stock !== null && meal?.stock !== undefined) {
+      if (meal.stock < qty) {
+        throw new AppError(
+          httpStatus.BAD_REQUEST,
+          "Not enough stock for one or more meals",
+        );
+      }
+      mealsToDecrement.set(mealId, qty);
+    }
+  });
+
+  return {
+    orderItems,
+    totalAmount,
+    currency: currency ?? "USD",
+    mealsToDecrement,
+  };
+};
+
 const createOrder = async (userId: string, payload: ICreateOrderPayload) => {
   if (!payload.providerProfileId) {
     throw new AppError(httpStatus.BAD_REQUEST, "Provider ID is required");
@@ -173,64 +408,97 @@ const createOrder = async (userId: string, payload: ICreateOrderPayload) => {
     throw new AppError(httpStatus.NOT_FOUND, "Delivery address not found");
   }
 
+  const hasManualItems = Boolean(payload.items?.length);
+
   const { orderItems, totalAmount, currency, mealsToDecrement, cartId } =
-    await buildOrderFromCart(userId, payload.providerProfileId);
+    hasManualItems
+      ? await buildOrderFromItems(payload.providerProfileId, payload.items ?? [])
+      : await buildOrderFromCart(userId, payload.providerProfileId);
 
-  const order = await prisma.$transaction(async (tx) => {
-    for (const [mealId, qty] of mealsToDecrement.entries()) {
-      await tx.meal.update({
-        where: { id: mealId },
+  const createdOrderId = await prisma.$transaction(
+    async (tx) => {
+      for (const [mealId, qty] of mealsToDecrement.entries()) {
+        await tx.meal.update({
+          where: { id: mealId },
+          data: {
+            ...(qty > 0 && { stock: { decrement: qty } }),
+          },
+        });
+      }
+
+      const createdOrder = await tx.order.create({
         data: {
-          ...(qty > 0 && { stock: { decrement: qty } }),
+          user: { connect: { id: userId } },
+          providerProfile: { connect: { id: payload.providerProfileId } },
+          address: { connect: { id: payload.deliveryAddressId } },
+          totalAmount,
+          currency,
+          paymentMethod: "cash_on_delivery",
+          notes: payload.notes,
+          items: { create: orderItems },
         },
+        select: { id: true },
       });
-    }
 
-    const createdOrder = await tx.order.create({
-      data: {
-        user: { connect: { id: userId } },
-        providerProfile: { connect: { id: payload.providerProfileId } },
-        address: { connect: { id: payload.deliveryAddressId } },
-        totalAmount,
-        currency,
-        paymentMethod: "cash_on_delivery",
-        notes: payload.notes,
-        items: { create: orderItems },
-      },
-      include: {
-        items: {
-          include: {
-            meal: {
-              select: {
-                id: true,
-                title: true,
-                price: true,
-              },
+      if (cartId) {
+        await tx.cartItem.deleteMany({
+          where: { cartId },
+        });
+      }
+
+      return createdOrder.id;
+    },
+    {
+      maxWait: 10_000,
+      timeout: 20_000,
+    },
+  );
+
+  const order = await prisma.order.findUnique({
+    where: { id: createdOrderId },
+    include: {
+      items: {
+        include: {
+          meal: {
+            select: {
+              id: true,
+              title: true,
+              price: true,
             },
-            options: {
-              include: {
-                variantOption: true,
+          },
+          options: {
+            include: {
+              variantOption: {
+                include: {
+                  variant: {
+                    select: {
+                      id: true,
+                      name: true,
+                    },
+                  },
+                },
               },
             },
           },
         },
-        providerProfile: {
-          select: {
-            id: true,
-            name: true,
-            logoSrc: true,
-          },
-        },
-        address: true,
       },
-    });
-
-    await tx.cartItem.deleteMany({
-      where: { cartId },
-    });
-
-    return createdOrder;
+      providerProfile: {
+        select: {
+          id: true,
+          name: true,
+          logoSrc: true,
+        },
+      },
+      address: true,
+    },
   });
+
+  if (!order) {
+    throw new AppError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      "Order created but failed to load details",
+    );
+  }
 
   return order;
 };
@@ -266,7 +534,16 @@ const getMyOrders = async (userId: string, query: Record<string, string>) => {
             },
             options: {
               include: {
-                variantOption: true,
+                variantOption: {
+                  include: {
+                    variant: {
+                      select: {
+                        id: true,
+                        name: true,
+                      },
+                    },
+                  },
+                },
               },
             },
           },
@@ -316,7 +593,16 @@ const getOrderById = async (userId: string, orderId: string) => {
           },
           options: {
             include: {
-              variantOption: true,
+              variantOption: {
+                include: {
+                  variant: {
+                    select: {
+                      id: true,
+                      name: true,
+                    },
+                  },
+                },
+              },
             },
           },
         },
@@ -379,25 +665,31 @@ const cancelOrder = async (userId: string, orderId: string) => {
     );
   });
 
-  const updatedOrder = await prisma.$transaction(async (tx) => {
-    for (const [mealId, qty] of quantityByMeal.entries()) {
-      const stock = stockByMealId.get(mealId);
-      if (stock !== null && stock !== undefined) {
-        await tx.meal.update({
-          where: { id: mealId },
-          data: { stock: { increment: qty } },
-        });
+  const updatedOrder = await prisma.$transaction(
+    async (tx) => {
+      for (const [mealId, qty] of quantityByMeal.entries()) {
+        const stock = stockByMealId.get(mealId);
+        if (stock !== null && stock !== undefined) {
+          await tx.meal.update({
+            where: { id: mealId },
+            data: { stock: { increment: qty } },
+          });
+        }
       }
-    }
 
-    return tx.order.update({
-      where: { id: orderId },
-      data: {
-        status: "cancelled",
-        cancelledAt: new Date(),
-      },
-    });
-  });
+      return tx.order.update({
+        where: { id: orderId },
+        data: {
+          status: "cancelled",
+          cancelledAt: new Date(),
+        },
+      });
+    },
+    {
+      maxWait: 10_000,
+      timeout: 20_000,
+    },
+  );
 
   return updatedOrder;
 };

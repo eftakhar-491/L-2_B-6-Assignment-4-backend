@@ -8,6 +8,7 @@ import type {
   IUpdateUserStatusPayload,
   IVerifyProviderPayload,
 } from "./admin.interface";
+import { Role } from "../user/user.interface";
 
 const slugify = (value: string) =>
   value
@@ -78,6 +79,22 @@ const updateUserStatus = async (
     throw new AppError(
       httpStatus.BAD_REQUEST,
       "Status or active flag is required",
+    );
+  }
+
+  const existingUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, role: true },
+  });
+
+  if (!existingUser) {
+    throw new AppError(httpStatus.NOT_FOUND, "User not found");
+  }
+
+  if (existingUser.role === Role.super_admin) {
+    throw new AppError(
+      httpStatus.FORBIDDEN,
+      "Super admin status can only be changed by super admin endpoints",
     );
   }
 

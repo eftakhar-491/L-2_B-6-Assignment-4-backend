@@ -17,6 +17,7 @@ enum UserRole {
   customer
   provider
   admin
+  super_admin
 }
 
 enum UserStatus {
@@ -202,6 +203,7 @@ model MealVariantOption {
   variant          MealVariant       @relation(fields: [variantId], references: [id], onDelete: Cascade)
   orderItemOptions OrderItemOption[]
   cartItems        CartItem[]
+  cartItemOptions  CartItemOption[]
 
   @@index([variantId])
 }
@@ -355,16 +357,32 @@ model CartItem {
   cartId          String   @db.Uuid
   mealId          String   @db.Uuid
   variantOptionId String?  @db.Uuid
+  optionKey       String   @default("")
   quantity        Int      @default(1)
   createdAt       DateTime @default(now())
 
   cart          Cart               @relation(fields: [cartId], references: [id], onDelete: Cascade)
   meal          Meal               @relation(fields: [mealId], references: [id])
   variantOption MealVariantOption? @relation(fields: [variantOptionId], references: [id])
+  options       CartItemOption[]
 
-  @@unique([cartId, mealId, variantOptionId])
+  @@unique([cartId, mealId, optionKey])
   @@index([cartId])
   @@index([mealId])
+}
+
+model CartItemOption {
+  id              String  @id @default(uuid()) @db.Uuid
+  cartItemId      String  @db.Uuid
+  variantOptionId String  @db.Uuid
+  priceDelta      Decimal @default(0)
+
+  cartItem      CartItem          @relation(fields: [cartItemId], references: [id], onDelete: Cascade)
+  variantOption MealVariantOption @relation(fields: [variantOptionId], references: [id])
+
+  @@unique([cartItemId, variantOptionId])
+  @@index([cartItemId])
+  @@index([variantOptionId])
 }
 
 model ModerationLog {

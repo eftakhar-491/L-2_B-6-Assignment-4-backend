@@ -7,6 +7,7 @@ import { MealRoutes } from "../modules/meal/meal.route";
 import { OrderRoutes } from "../modules/order/order.route";
 import { CartRoutes } from "../modules/cart/cart.route";
 import { AdminRoutes } from "../modules/admin/admin.route";
+import { SuperAdminRoutes } from "../modules/superAdmin/superAdmin.route";
 // import { ProductRoutes } from "../modules/product/product.route";
 // import { CategoryRoutes } from "../modules/category/category.route";
 // import { ImageRoutes } from "../modules/image/image.route";
@@ -39,6 +40,10 @@ const moduleRoutes = [
   {
     path: "/admin",
     route: AdminRoutes,
+  },
+  {
+    path: "/super-admin",
+    route: SuperAdminRoutes,
   },
   {
     path: "/provider",

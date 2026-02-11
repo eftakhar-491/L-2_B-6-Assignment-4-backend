@@ -2,6 +2,7 @@ export enum Role {
   customer = "customer",
   provider = "provider",
   admin = "admin",
+  super_admin = "super_admin",
 }
 
 export enum UserStatus {
