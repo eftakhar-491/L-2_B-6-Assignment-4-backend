@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { auth } from "../app/lib/auth";
 import { prisma } from "../app/lib/prisma";
+import { getPrimaryFrontendOrigin } from "../app/config/origins";
 import { Role, UserStatus } from "../app/modules/user/user.interface";
 
 const resolveSeedPhone = async (preferredPhone?: string | null) => {
@@ -21,7 +22,7 @@ const seedSuperAdmin = async () => {
   const password = process.env.SUPER_ADMIN_PASSWORD?.trim();
   const name = process.env.SUPER_ADMIN_NAME?.trim() || "Super Admin";
   const preferredPhone = process.env.SUPER_ADMIN_PHONE?.trim();
-  const origin = process.env.FRONTEND_URL?.trim() || "http://localhost:3000";
+  const origin = getPrimaryFrontendOrigin();
 
   if (!email || !password) {
     throw new Error(

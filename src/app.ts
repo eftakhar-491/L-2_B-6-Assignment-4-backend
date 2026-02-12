@@ -8,6 +8,7 @@ import { router } from "./app/routes";
 // import expressSession from "express-session";
 import { globalErrorHandler } from "./app/middlewares/globalErrorHandler";
 import notFound from "./app/middlewares/notFound";
+import { getFrontendOrigins } from "./app/config/origins";
 
 // import { router } from "./app/routes";
 import { toNodeHandler } from "better-auth/node";
@@ -27,9 +28,22 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use(cookieParser());
 
+const frontendOrigins = getFrontendOrigins();
+
 app.use(
   cors({
-    origin: [process.env.FRONTEND_URL as string],
+    origin: (origin, callback) => {
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      const normalizedOrigin = origin.replace(/\/+$/, "");
+      if (frontendOrigins.includes(normalizedOrigin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error(`Origin not allowed by CORS: ${origin}`));
+    },
     credentials: true,
   }),
 );

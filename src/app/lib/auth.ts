@@ -3,7 +3,14 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import { prisma } from "./prisma";
 import { sendEmail } from "../utils/sendEmail";
 import { envVars } from "../config/env";
+import {
+  getFrontendOrigins,
+  getPrimaryFrontendOrigin,
+} from "../config/origins";
 import { Role, UserStatus } from "../modules/user/user.interface";
+
+const trustedOrigins = getFrontendOrigins();
+const primaryFrontendOrigin = getPrimaryFrontendOrigin();
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, {
@@ -31,9 +38,13 @@ export const auth = betterAuth({
     database: {
       generateId: "uuid",
     },
+    defaultCookieAttributes: {
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      secure: process.env.NODE_ENV === "production",
+    },
   },
   secret: process.env.BETTER_AUTH_SECRET as string,
-  trustedOrigins: [process.env.FRONTEND_URL as string],
+  trustedOrigins,
   user: {
     additionalFields: {
       role: {
@@ -70,7 +81,7 @@ export const auth = betterAuth({
         templateName: "forgetPassword",
         templateData: {
           name: user.name,
-          resetUILink: `${envVars.FRONTEND_URL}/auth/reset-password?id=${user.id}&token=${token}`,
+          resetUILink: `${primaryFrontendOrigin}/auth/reset-password?id=${user.id}&token=${token}`,
         },
       });
     },
@@ -90,7 +101,7 @@ export const auth = betterAuth({
     sendOnSignIn: false,
     autoSignInAfterVerification: true,
     sendVerificationEmail: async ({ user, url, token }, request) => {
-      const resetUILink = `${envVars.FRONTEND_URL}/auth/verify?id=${user.id}&token=${token}`;
+      const resetUILink = `${primaryFrontendOrigin}/auth/verify?id=${user.id}&token=${token}`;
 
       sendEmail({
         to: user.email,
