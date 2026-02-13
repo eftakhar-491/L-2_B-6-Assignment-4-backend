@@ -2,7 +2,11 @@ import httpStatus from "http-status-codes";
 import type { Prisma } from "../../../../generated/prisma/browser";
 import AppError from "../../helper/AppError";
 import { prisma } from "../../lib/prisma";
-import type { ICreateOrderPayload, IOrderItemInput } from "./order.interface";
+import type {
+  ICreateOrderPayload,
+  ICreateOrderReviewPayload,
+  IOrderItemInput,
+} from "./order.interface";
 
 const ensureQuantity = (quantity: number) => {
   if (!Number.isInteger(quantity) || quantity <= 0) {
@@ -618,6 +622,102 @@ const getOrderById = async (userId: string, orderId: string) => {
   return order;
 };
 
+const createOrderReview = async (
+  userId: string,
+  orderId: string,
+  payload: ICreateOrderReviewPayload,
+) => {
+  if (!orderId) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Order ID is required");
+  }
+
+  const mealId = payload?.mealId?.trim();
+  if (!mealId) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Meal ID is required");
+  }
+
+  const rating = Number(payload?.rating);
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      "Rating must be an integer between 1 and 5",
+    );
+  }
+
+  const order = await prisma.order.findFirst({
+    where: {
+      id: orderId,
+      userId,
+    },
+    select: {
+      id: true,
+      status: true,
+      items: {
+        select: {
+          mealId: true,
+        },
+      },
+    },
+  });
+
+  if (!order) {
+    throw new AppError(httpStatus.NOT_FOUND, "Order not found");
+  }
+
+  if (order.status !== "delivered") {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      "You can review only delivered orders",
+    );
+  }
+
+  const allowedMealIds = new Set(order.items.map((item) => item.mealId));
+  if (!allowedMealIds.has(mealId)) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      "The selected meal does not belong to this order",
+    );
+  }
+
+  const review = await prisma.review.upsert({
+    where: {
+      userId_mealId: {
+        userId,
+        mealId,
+      },
+    },
+    update: {
+      orderId: order.id,
+      rating,
+      comment: payload?.comment?.trim() || null,
+    },
+    create: {
+      userId,
+      mealId,
+      orderId: order.id,
+      rating,
+      comment: payload?.comment?.trim() || null,
+    },
+    include: {
+      meal: {
+        select: {
+          id: true,
+          title: true,
+        },
+      },
+      user: {
+        select: {
+          id: true,
+          name: true,
+          image: true,
+        },
+      },
+    },
+  });
+
+  return review;
+};
+
 const cancelOrder = async (userId: string, orderId: string) => {
   if (!orderId) {
     throw new AppError(httpStatus.BAD_REQUEST, "Order ID is required");
@@ -698,5 +798,6 @@ export const OrderServices = {
   createOrder,
   getMyOrders,
   getOrderById,
+  createOrderReview,
   cancelOrder,
 };

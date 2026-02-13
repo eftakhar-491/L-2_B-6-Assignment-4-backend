@@ -25,3 +25,9 @@ export interface IOrderItemSummary {
   variantOptionIds: string[];
   notes?: string;
 }
+
+export interface ICreateOrderReviewPayload {
+  mealId: string;
+  rating: number;
+  comment?: string;
+}

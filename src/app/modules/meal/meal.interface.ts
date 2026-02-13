@@ -3,6 +3,7 @@ export interface IMealFilters {
   providerId?: string;
   providerProfileId?: string;
   categoryId?: string;
+  dietary?: string;
   minPrice?: string;
   maxPrice?: string;
   isFeatured?: string;

@@ -15,6 +15,11 @@ router.post(
   checkAuth(Role.customer, Role.provider),
   OrderControllers.createOrder,
 );
+router.post(
+  "/:id/reviews",
+  checkAuth(Role.customer),
+  OrderControllers.createOrderReview,
+);
 router.get(
   "/:id",
   checkAuth(Role.customer, Role.provider),

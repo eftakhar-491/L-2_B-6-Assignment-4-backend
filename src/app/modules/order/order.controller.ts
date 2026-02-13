@@ -4,7 +4,10 @@ import AppError from "../../helper/AppError";
 import { catchAsync } from "../../utils/catchAsync";
 import { sendResponse } from "../../utils/sendResponse";
 import { OrderServices } from "./order.service";
-import type { ICreateOrderPayload } from "./order.interface";
+import type {
+  ICreateOrderPayload,
+  ICreateOrderReviewPayload,
+} from "./order.interface";
 
 const createOrder = catchAsync(
   async (req: Request, res: Response, next: NextFunction) => {
@@ -56,7 +59,7 @@ const getOrderById = catchAsync(
       throw new AppError(httpStatus.UNAUTHORIZED, "User not authenticated");
     }
 
-    const order = await OrderServices.getOrderById(userId, req.params.id);
+    const order = await OrderServices.getOrderById(userId, req.params.id as string);
 
     sendResponse(res, {
       success: true,
@@ -74,7 +77,7 @@ const cancelOrder = catchAsync(
       throw new AppError(httpStatus.UNAUTHORIZED, "User not authenticated");
     }
 
-    const order = await OrderServices.cancelOrder(userId, req.params.id);
+    const order = await OrderServices.cancelOrder(userId, req.params.id as string);
 
     sendResponse(res, {
       success: true,
@@ -85,9 +88,32 @@ const cancelOrder = catchAsync(
   },
 );
 
+const createOrderReview = catchAsync(
+  async (req: Request, res: Response, next: NextFunction) => {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new AppError(httpStatus.UNAUTHORIZED, "User not authenticated");
+    }
+
+    const review = await OrderServices.createOrderReview(
+      userId,
+      req.params.id as string,
+      req.body as ICreateOrderReviewPayload,
+    );
+
+    sendResponse(res, {
+      success: true,
+      statusCode: httpStatus.CREATED,
+      message: "Review submitted successfully",
+      data: review,
+    });
+  },
+);
+
 export const OrderControllers = {
   createOrder,
   getMyOrders,
   getOrderById,
+  createOrderReview,
   cancelOrder,
 };

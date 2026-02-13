@@ -18,6 +18,26 @@ const parseNumber = (value?: string) => {
   return Number.isFinite(num) ? num : undefined;
 };
 
+const toSlug = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+const parseDietarySlugs = (value?: string) => {
+  if (!value) return [];
+
+  return Array.from(
+    new Set(
+      value
+        .split(",")
+        .map((entry) => toSlug(entry))
+        .filter(Boolean),
+    ),
+  );
+};
+
 const parsePagination = (page?: string, limit?: string) => {
   const pageNumber = Number(page) || 1;
   const limitNumber = Number(limit) || 10;
@@ -71,6 +91,19 @@ const buildMealQuery = (query: IMealFilters) => {
     where.categories = {
       some: {
         categoryId: query.categoryId,
+      },
+    };
+  }
+
+  const dietarySlugs = parseDietarySlugs(query.dietary);
+  if (dietarySlugs.length > 0) {
+    where.dietaryTags = {
+      some: {
+        dietaryPreference: {
+          slug: {
+            in: dietarySlugs,
+          },
+        },
       },
     };
   }
