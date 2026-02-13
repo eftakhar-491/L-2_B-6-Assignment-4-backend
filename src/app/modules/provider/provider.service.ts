@@ -844,6 +844,11 @@ const getAllProviders = async (query: Record<string, string>) => {
   // ✅ enforce verified default = true (your previous behavior)
   const verifiedFilter = parseBoolean(isVerified);
   built.where.isVerified = verifiedFilter ?? true;
+  built.where.user = {
+    status: {
+      not: "deleted",
+    },
+  };
 
   // ✅ relational filter for category
   if (categoryId) {
@@ -914,6 +919,98 @@ const getProviderWithMenu = async (providerId: string) => {
   }
 
   return provider;
+};
+
+const getMyMeals = async (userId: string, query: Record<string, string>) => {
+  const providerProfile = await getProviderProfileOrThrow(userId);
+
+  const page = Number(query.page) || 1;
+  const limit = Number(query.limit) || 20;
+  const skip = (page - 1) * limit;
+
+  const activeFilter = parseBoolean(query.isActive);
+  const searchTerm = query.searchTerm?.trim();
+
+  const where: Prisma.MealWhereInput = {
+    providerProfileId: providerProfile.id,
+    deletedAt: null,
+    ...(activeFilter !== undefined ? { isActive: activeFilter } : {}),
+    ...(searchTerm
+      ? {
+          OR: [
+            { title: { contains: searchTerm, mode: "insensitive" } },
+            { description: { contains: searchTerm, mode: "insensitive" } },
+            { shortDesc: { contains: searchTerm, mode: "insensitive" } },
+          ],
+        }
+      : {}),
+  };
+
+  const [total, meals] = await Promise.all([
+    prisma.meal.count({ where }),
+    prisma.meal.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy: { createdAt: "desc" },
+      include: {
+        images: true,
+        categories: {
+          include: { category: true },
+        },
+        variants: {
+          include: { options: true },
+        },
+        dietaryTags: {
+          include: { dietaryPreference: true },
+        },
+      },
+    }),
+  ]);
+
+  return {
+    meta: {
+      page,
+      limit,
+      total,
+      totalPage: Math.ceil(total / limit),
+    },
+    data: meals,
+  };
+};
+
+const getMyMealById = async (userId: string, mealId: string) => {
+  if (!mealId) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Meal ID is required");
+  }
+
+  const providerProfile = await getProviderProfileOrThrow(userId);
+
+  const meal = await prisma.meal.findFirst({
+    where: {
+      id: mealId,
+      providerProfileId: providerProfile.id,
+      deletedAt: null,
+    },
+    include: {
+      images: true,
+      categories: {
+        include: { category: true },
+      },
+      variants: {
+        include: { options: true },
+      },
+      dietaryTags: {
+        include: { dietaryPreference: true },
+      },
+    },
+  });
+
+  if (!meal) {
+    throw new AppError(httpStatus.NOT_FOUND, "Meal not found");
+  }
+
+  return meal;
 };
 
 const createCategoryRequest = async (
@@ -1061,6 +1158,8 @@ const getMyOrders = async (userId: string, query: Record<string, string>) => {
 export const ProviderServices = {
   getProviderWithMenu,
   getAllProviders,
+  getMyMeals,
+  getMyMealById,
   getMyOrders,
   createCategoryRequest,
   getMyCategories,

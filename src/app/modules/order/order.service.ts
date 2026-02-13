@@ -211,6 +211,9 @@ const buildOrderFromItems = async (
       id: { in: mealIds },
       deletedAt: null,
       isActive: true,
+      providerProfile: {
+        isVerified: true,
+      },
     },
     select: {
       id: true,
@@ -393,11 +396,14 @@ const createOrder = async (userId: string, payload: ICreateOrderPayload) => {
 
   const provider = await prisma.providerProfile.findUnique({
     where: { id: payload.providerProfileId },
-    select: { id: true },
+    select: { id: true, isVerified: true },
   });
 
   if (!provider) {
     throw new AppError(httpStatus.NOT_FOUND, "Provider not found");
+  }
+  if (!provider.isVerified) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Provider is not verified");
   }
 
   const address = await prisma.address.findFirst({

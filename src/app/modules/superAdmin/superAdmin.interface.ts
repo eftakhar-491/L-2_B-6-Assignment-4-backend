@@ -8,3 +8,12 @@ export interface ISuperAdminUpdateStatusPayload {
   status?: UserStatus;
   isActive?: boolean;
 }
+
+export interface ISuperAdminMealQuery {
+  page?: string;
+  limit?: string;
+  searchTerm?: string;
+  providerProfileId?: string;
+  isActive?: string;
+  isVerified?: string;
+}

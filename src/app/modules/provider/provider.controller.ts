@@ -76,6 +76,47 @@ const removeMeal = catchAsync(
   },
 );
 
+const getMyMeals = catchAsync(
+  async (req: Request, res: Response, next: NextFunction) => {
+    const userId = req.user?.id as string;
+    if (!userId) {
+      throw new AppError(httpStatus.UNAUTHORIZED, "User not authenticated");
+    }
+
+    const meals = await ProviderServices.getMyMeals(
+      userId,
+      req.query as Record<string, string>,
+    );
+
+    sendResponse(res, {
+      success: true,
+      statusCode: httpStatus.OK,
+      message: "Meals retrieved successfully",
+      data: meals.data,
+      meta: meals.meta,
+    });
+  },
+);
+
+const getMyMealById = catchAsync(
+  async (req: Request, res: Response, next: NextFunction) => {
+    const userId = req.user?.id as string;
+    if (!userId) {
+      throw new AppError(httpStatus.UNAUTHORIZED, "User not authenticated");
+    }
+
+    const mealId = req.params.id as string;
+    const meal = await ProviderServices.getMyMealById(userId, mealId);
+
+    sendResponse(res, {
+      success: true,
+      statusCode: httpStatus.OK,
+      message: "Meal retrieved successfully",
+      data: meal,
+    });
+  },
+);
+
 const updateOrderStatus = catchAsync(
   async (req: Request, res: Response, next: NextFunction) => {
     const userId = req.user?.id as string;
@@ -232,6 +273,8 @@ export const ProviderControllers = {
     },
   ),
   addMeal,
+  getMyMeals,
+  getMyMealById,
   updateMeal,
   removeMeal,
   updateOrderStatus,

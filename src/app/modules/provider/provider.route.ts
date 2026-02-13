@@ -31,6 +31,12 @@ router.post(
   ProviderControllers.createCategoryRequest,
 );
 router.post("/meals", checkAuth(Role.provider), ProviderControllers.addMeal);
+router.get("/meals", checkAuth(Role.provider), ProviderControllers.getMyMeals);
+router.get(
+  "/meals/:id",
+  checkAuth(Role.provider),
+  ProviderControllers.getMyMealById,
+);
 router.put(
   "/meals/:id",
   checkAuth(Role.provider),

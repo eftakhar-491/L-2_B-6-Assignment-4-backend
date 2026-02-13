@@ -77,6 +77,9 @@ const buildMealQuery = (query: IMealFilters) => {
   const where: Prisma.MealWhereInput = {
     ...(built.where ?? {}),
     deletedAt: null,
+    providerProfile: {
+      isVerified: true,
+    },
   };
 
   const active = parseBoolean(query.isActive);
@@ -185,6 +188,9 @@ const getMealById = async (mealId: string) => {
       id: mealId,
       deletedAt: null,
       isActive: true,
+      providerProfile: {
+        isVerified: true,
+      },
     },
     include: {
       providerProfile: {

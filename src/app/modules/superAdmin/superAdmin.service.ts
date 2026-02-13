@@ -4,9 +4,48 @@ import { prisma } from "../../lib/prisma";
 import type { Prisma } from "../../../../generated/prisma/browser";
 import { Role, UserStatus } from "../user/user.interface";
 import type {
+  ISuperAdminMealQuery,
   ISuperAdminUpdateRolePayload,
   ISuperAdminUpdateStatusPayload,
 } from "./superAdmin.interface";
+
+const userSelect = {
+  id: true,
+  name: true,
+  email: true,
+  phone: true,
+  role: true,
+  status: true,
+  isActive: true,
+  emailVerified: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
+const parseBoolean = (value?: string) => {
+  if (value === undefined) return undefined;
+  if (value === "true" || value === "1") return true;
+  if (value === "false" || value === "0") return false;
+  return undefined;
+};
+
+const assertSuperAdminRetention = async (targetUserId: string) => {
+  const remaining = await prisma.user.count({
+    where: {
+      role: Role.super_admin,
+      isActive: true,
+      status: UserStatus.active,
+      id: { not: targetUserId },
+    },
+  });
+
+  if (remaining <= 0) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      "At least one active super admin must remain",
+    );
+  }
+};
 
 const getOverview = async () => {
   const [
@@ -95,18 +134,7 @@ const getUsers = async (query: Record<string, string>) => {
       skip,
       take: limitNumber,
       orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        phone: true,
-        role: true,
-        status: true,
-        isActive: true,
-        emailVerified: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+      select: userSelect,
     }),
   ]);
 
@@ -118,6 +146,89 @@ const getUsers = async (query: Record<string, string>) => {
       totalPage: Math.ceil(total / limitNumber),
     },
     data: users,
+  };
+};
+
+const getMeals = async (query: ISuperAdminMealQuery) => {
+  const { page, limit, searchTerm, providerProfileId, isActive, isVerified } =
+    query;
+
+  const pageNumber = Number(page) || 1;
+  const limitNumber = Number(limit) || 20;
+  const skip = (pageNumber - 1) * limitNumber;
+
+  const activeFilter = parseBoolean(isActive);
+  const verifiedFilter = parseBoolean(isVerified);
+
+  const where: Prisma.MealWhereInput = {
+    deletedAt: null,
+    ...(providerProfileId ? { providerProfileId } : {}),
+    ...(activeFilter !== undefined ? { isActive: activeFilter } : {}),
+    ...(verifiedFilter !== undefined
+      ? { providerProfile: { isVerified: verifiedFilter } }
+      : {}),
+    ...(searchTerm?.trim()
+      ? {
+          OR: [
+            { title: { contains: searchTerm, mode: "insensitive" } },
+            { description: { contains: searchTerm, mode: "insensitive" } },
+            { shortDesc: { contains: searchTerm, mode: "insensitive" } },
+            {
+              providerProfile: {
+                name: { contains: searchTerm, mode: "insensitive" },
+              },
+            },
+          ],
+        }
+      : {}),
+  };
+
+  const [total, meals] = await prisma.$transaction([
+    prisma.meal.count({ where }),
+    prisma.meal.findMany({
+      where,
+      skip,
+      take: limitNumber,
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        title: true,
+        shortDesc: true,
+        price: true,
+        currency: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+        providerProfileId: true,
+        providerProfile: {
+          select: {
+            id: true,
+            name: true,
+            isVerified: true,
+            userId: true,
+          },
+        },
+        images: {
+          where: { isPrimary: true },
+          select: {
+            id: true,
+            src: true,
+            altText: true,
+            isPrimary: true,
+          },
+        },
+      },
+    }),
+  ]);
+
+  return {
+    meta: {
+      page: pageNumber,
+      limit: limitNumber,
+      total,
+      totalPage: Math.ceil(total / limitNumber),
+    },
+    data: meals,
   };
 };
 
@@ -153,18 +264,7 @@ const updateUserRole = async (
   return prisma.user.update({
     where: { id: userId },
     data: { role: payload.role },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      phone: true,
-      role: true,
-      status: true,
-      isActive: true,
-      emailVerified: true,
-      createdAt: true,
-      updatedAt: true,
-    },
+    select: userSelect,
   });
 };
 
@@ -193,7 +293,7 @@ const updateUserStatus = async (
 
   const existingUser = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, role: true },
+    select: { id: true, role: true, isActive: true, status: true },
   });
 
   if (!existingUser) {
@@ -212,22 +312,11 @@ const updateUserStatus = async (
 
   if (
     existingUser.role === Role.super_admin &&
+    existingUser.isActive &&
+    existingUser.status === UserStatus.active &&
     (payload.status === UserStatus.blocked || payload.isActive === false)
   ) {
-    const activeSuperAdmins = await prisma.user.count({
-      where: {
-        role: Role.super_admin,
-        isActive: true,
-        status: UserStatus.active,
-      },
-    });
-
-    if (activeSuperAdmins <= 1) {
-      throw new AppError(
-        httpStatus.BAD_REQUEST,
-        "At least one active super admin must remain",
-      );
-    }
+    await assertSuperAdminRetention(userId);
   }
 
   return prisma.user.update({
@@ -236,24 +325,207 @@ const updateUserStatus = async (
       ...(payload.status !== undefined && { status: payload.status }),
       ...(payload.isActive !== undefined && { isActive: payload.isActive }),
     },
+    select: userSelect,
+  });
+};
+
+const deleteUser = async (actorId: string, userId: string) => {
+  if (!userId) {
+    throw new AppError(httpStatus.BAD_REQUEST, "User ID is required");
+  }
+
+  if (actorId === userId) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      "You cannot delete your own account",
+    );
+  }
+
+  const existingUser = await prisma.user.findUnique({
+    where: { id: userId },
     select: {
       id: true,
-      name: true,
-      email: true,
-      phone: true,
       role: true,
-      status: true,
       isActive: true,
-      emailVerified: true,
-      createdAt: true,
-      updatedAt: true,
+      status: true,
+      providerProfile: {
+        select: { id: true },
+      },
     },
+  });
+
+  if (!existingUser) {
+    throw new AppError(httpStatus.NOT_FOUND, "User not found");
+  }
+
+  if (
+    existingUser.role === Role.super_admin &&
+    existingUser.isActive &&
+    existingUser.status === UserStatus.active
+  ) {
+    await assertSuperAdminRetention(existingUser.id);
+  }
+
+  const now = new Date();
+
+  return prisma.$transaction(async (tx) => {
+    if (existingUser.providerProfile?.id) {
+      await tx.providerProfile.update({
+        where: { id: existingUser.providerProfile.id },
+        data: { isVerified: false },
+      });
+
+      await tx.meal.updateMany({
+        where: {
+          providerProfileId: existingUser.providerProfile.id,
+          deletedAt: null,
+        },
+        data: {
+          deletedAt: now,
+          isActive: false,
+        },
+      });
+    }
+
+    return tx.user.update({
+      where: { id: userId },
+      data: {
+        status: UserStatus.deleted,
+        isActive: false,
+      },
+      select: userSelect,
+    });
+  });
+};
+
+const deleteProvider = async (actorId: string, providerId: string) => {
+  if (!providerId) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Provider ID is required");
+  }
+
+  const provider = await prisma.providerProfile.findUnique({
+    where: { id: providerId },
+    select: {
+      id: true,
+      userId: true,
+      user: {
+        select: {
+          id: true,
+          role: true,
+          isActive: true,
+          status: true,
+        },
+      },
+    },
+  });
+
+  if (!provider) {
+    throw new AppError(httpStatus.NOT_FOUND, "Provider not found");
+  }
+
+  if (provider.userId === actorId) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      "You cannot delete your own provider account",
+    );
+  }
+
+  if (
+    provider.user.role === Role.super_admin &&
+    provider.user.isActive &&
+    provider.user.status === UserStatus.active
+  ) {
+    await assertSuperAdminRetention(provider.user.id);
+  }
+
+  const now = new Date();
+
+  return prisma.$transaction(async (tx) => {
+    const disabledMeals = await tx.meal.updateMany({
+      where: {
+        providerProfileId: provider.id,
+        deletedAt: null,
+      },
+      data: {
+        deletedAt: now,
+        isActive: false,
+      },
+    });
+
+    await tx.providerProfile.update({
+      where: { id: provider.id },
+      data: { isVerified: false },
+    });
+
+    const user = await tx.user.update({
+      where: { id: provider.userId },
+      data: {
+        status: UserStatus.deleted,
+        isActive: false,
+      },
+      select: userSelect,
+    });
+
+    return {
+      id: provider.id,
+      user,
+      disabledMeals: disabledMeals.count,
+    };
+  });
+};
+
+const deleteMeal = async (mealId: string) => {
+  if (!mealId) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Meal ID is required");
+  }
+
+  const existingMeal = await prisma.meal.findFirst({
+    where: {
+      id: mealId,
+      deletedAt: null,
+    },
+    select: {
+      id: true,
+      title: true,
+      providerProfileId: true,
+    },
+  });
+
+  if (!existingMeal) {
+    throw new AppError(httpStatus.NOT_FOUND, "Meal not found");
+  }
+
+  const deletedAt = new Date();
+
+  return prisma.$transaction(async (tx) => {
+    await tx.cartItem.deleteMany({
+      where: { mealId },
+    });
+
+    return tx.meal.update({
+      where: { id: mealId },
+      data: {
+        deletedAt,
+        isActive: false,
+      },
+      select: {
+        id: true,
+        title: true,
+        providerProfileId: true,
+        isActive: true,
+        deletedAt: true,
+      },
+    });
   });
 };
 
 export const SuperAdminServices = {
   getOverview,
   getUsers,
+  getMeals,
   updateUserRole,
   updateUserStatus,
+  deleteUser,
+  deleteProvider,
+  deleteMeal,
 };

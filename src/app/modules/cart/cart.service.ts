@@ -162,7 +162,14 @@ const buildOptionKey = (optionIds: string[]) => optionIds.join("|");
 
 const validateMealAndOptions = async (mealId: string, optionIds: string[]) => {
   const meal = await prisma.meal.findFirst({
-    where: { id: mealId, deletedAt: null, isActive: true },
+    where: {
+      id: mealId,
+      deletedAt: null,
+      isActive: true,
+      providerProfile: {
+        isVerified: true,
+      },
+    },
     select: { id: true, providerProfileId: true },
   });
 
